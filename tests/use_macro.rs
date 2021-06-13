@@ -29,6 +29,15 @@ mod test {
                         path: std::path::PathBuf,
                     },
             },
+            #[error("invalid option: '{}'", .ctx.0)]
+            InvalidOpt {
+                @context
+                ctx:
+                    #[derive(Debug)]
+                    struct (String),
+            },
+            #[error("I have no idea about this error")]
+            JustFailed,
         }
     }
 }

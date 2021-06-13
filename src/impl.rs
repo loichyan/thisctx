@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
-use syn::{braced, Attribute, Field, FieldsNamed, Ident, Token};
+use syn::{braced, token, Attribute, Field, FieldsNamed, FieldsUnnamed, Ident, Token};
 
 pub struct ThisCtx(EnumDef);
 
@@ -79,8 +79,10 @@ impl VariantDef {
             VariantBody::Struct { ctx, .. } => match ctx {
                 Some(ctx) => {
                     let attr = &ctx.attr;
-                    let body = &ctx.body;
-                    quote!(#(#attr)* struct #name #body)
+                    match &ctx.body {
+                        CtxBody::Struct(body) => quote!(#(#attr)* struct #name #body),
+                        CtxBody::Tuple(body) => quote!(#(#attr)* struct #name #body;),
+                    }
                 }
                 None => quote!(struct #name;),
             },
@@ -100,21 +102,18 @@ impl Parse for VariantDef {
 impl ToTokens for VariantDef {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self { attr, name, body } = self;
-        let body = match body {
-            VariantBody::Unit => quote!(),
+        let def = match body {
+            VariantBody::Unit => quote!(#(#attr)* #name),
             VariantBody::Struct { src, ctx } => {
                 let src = src.as_ref().map(|SrcField(src)| quote!(#src));
                 let ctx = ctx
                     .as_ref()
                     .map(|CtxField { name: ctx, .. }| quote!(#ctx: #name));
-                let fields = src
-                    .into_iter()
-                    .chain(ctx)
-                    .collect::<Punctuated<_, Token![,]>>();
-                quote!({ #fields })
+                let fields = src.into_iter().chain(ctx);
+                quote!(#(#attr)* #name { #(#fields,)* })
             }
         };
-        tokens.extend(quote!(#(#attr)* #name #body))
+        tokens.extend(def)
     }
 }
 
@@ -184,7 +183,7 @@ impl Parse for SrcField {
 struct CtxField {
     name: Ident,
     attr: Vec<Attribute>,
-    body: FieldsNamed,
+    body: CtxBody,
 }
 
 impl Parse for CtxField {
@@ -195,5 +194,25 @@ impl Parse for CtxField {
         input.parse::<Token![struct]>()?;
         let body = input.parse()?;
         Ok(Self { name, attr, body })
+    }
+}
+
+enum CtxBody {
+    Struct(FieldsNamed),
+    Tuple(FieldsUnnamed),
+}
+
+impl Parse for CtxBody {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let lookhead = input.lookahead1();
+        if lookhead.peek(token::Brace) {
+            let inner = input.parse()?;
+            Ok(Self::Struct(inner))
+        } else if lookhead.peek(token::Paren) {
+            let inner = input.parse()?;
+            Ok(Self::Tuple(inner))
+        } else {
+            Err(lookhead.error())
+        }
     }
 }
