@@ -1,0 +1,9 @@
+[package]
+name = "thisctx"
+version = "0.1.0"
+authors = ["loichyan <loichyan@foxmail.com>"]
+edition = "2018"
+license = "MIT"
+
+[dev-dependencies]
+thiserror = "1.0"
