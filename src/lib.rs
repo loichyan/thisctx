@@ -1,13 +1,9 @@
-mod r#impl;
+mod ext;
 
-use proc_macro::TokenStream;
-use quote::ToTokens;
-use r#impl::ThisCtx;
-use syn::parse_macro_input;
+pub use ext::{OptionExt, ResultExt};
+pub use thisctx_impl::thisctx;
 
-#[proc_macro]
-pub fn thisctx(tokens: TokenStream) -> TokenStream {
-    parse_macro_input!(tokens as ThisCtx)
-        .into_token_stream()
-        .into()
+#[doc(hidden)]
+pub mod private {
+    pub use crate::ext::{IntoError, NoneError};
 }

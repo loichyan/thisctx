@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
-use syn::{braced, token, Attribute, Field, FieldsNamed, FieldsUnnamed, Ident, Token};
+use syn::{braced, token, Attribute, FieldsNamed, FieldsUnnamed, Ident, Token, Type};
 
 pub struct ThisCtx(EnumDef);
 
@@ -51,17 +51,79 @@ impl ToTokens for EnumDef {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self {
             attr,
-            name,
+            name: err_name,
             variants,
         } = self;
-        let ctx_defs = variants.iter().map(VariantDef::to_context_def);
+        // enum definition
         tokens.extend(quote! (
             #(#attr)*
-            enum #name {
+            enum #err_name {
                 #variants
             }
-            #(#ctx_defs)*
-        ))
+        ));
+
+        // context definition
+        for variant in variants {
+            let VariantDef {
+                name: var_name,
+                body,
+                ..
+            } = variant;
+            let (def, imp) = match body {
+                VariantBody::Unit => {
+                    let def = quote!(struct #var_name;);
+                    let imp = quote!(
+                        impl thisctx::private::IntoError for #var_name {
+                            type Error = #err_name;
+                            type Source = thisctx::private::NoneError;
+
+                            fn into_error(self, _: Self::Source) -> Self::Error {
+                                Self::Error::#var_name
+                            }
+                        }
+                    );
+                    (def, imp)
+                }
+                VariantBody::Struct { ctx, src } => {
+                    let (def, ctx_field) = match ctx {
+                        Some(CtxField { attr, body, name }) => {
+                            let def = match body {
+                                CtxBody::Struct(body) => quote!(#(#attr)* struct #var_name #body),
+                                CtxBody::Tuple(body) => quote!(#(#attr)* struct #var_name #body;),
+                            };
+                            (def, quote!(#name: self))
+                        }
+                        None => (quote!(struct #var_name;), quote!()),
+                    };
+                    let imp_tail = match src {
+                        Some(SrcField { name, ty }) => quote!(
+                            type Source = #ty;
+
+                            fn into_error(self, source: Self::Source) -> Self::Error {
+                                let #name = source;
+                                Self::Error::#var_name { #name, #ctx_field }
+                            }
+                        ),
+                        None => quote!(
+                            type Source = thisctx::private::NoneError;
+
+                            fn into_error(self, _: Self::Source) -> Self::Error {
+                                Self::Error::#var_name { #ctx_field }
+                            }
+                        ),
+                    };
+                    let imp = quote!(
+                        impl thisctx::private::IntoError for #var_name {
+                            type Error = #err_name;
+                            #imp_tail
+                        }
+                    );
+                    (def, imp)
+                }
+            };
+            tokens.extend(def);
+            tokens.extend(imp);
+        }
     }
 }
 
@@ -69,25 +131,6 @@ struct VariantDef {
     attr: Vec<Attribute>,
     name: Ident,
     body: VariantBody,
-}
-
-impl VariantDef {
-    fn to_context_def(&self) -> TokenStream {
-        let Self { name, body, .. } = self;
-        match body {
-            VariantBody::Unit => quote!(struct #name;),
-            VariantBody::Struct { ctx, .. } => match ctx {
-                Some(ctx) => {
-                    let attr = &ctx.attr;
-                    match &ctx.body {
-                        CtxBody::Struct(body) => quote!(#(#attr)* struct #name #body),
-                        CtxBody::Tuple(body) => quote!(#(#attr)* struct #name #body;),
-                    }
-                }
-                None => quote!(struct #name;),
-            },
-        }
-    }
 }
 
 impl Parse for VariantDef {
@@ -105,7 +148,7 @@ impl ToTokens for VariantDef {
         let def = match body {
             VariantBody::Unit => quote!(#(#attr)* #name),
             VariantBody::Struct { src, ctx } => {
-                let src = src.as_ref().map(|SrcField(src)| quote!(#src));
+                let src = src.as_ref().map(|src| quote!(#src));
                 let ctx = ctx
                     .as_ref()
                     .map(|CtxField { name: ctx, .. }| quote!(#ctx: #name));
@@ -171,12 +214,24 @@ impl Parse for VariantBody {
     }
 }
 
-struct SrcField(Field);
+struct SrcField {
+    name: Ident,
+    ty: Type,
+}
 
 impl Parse for SrcField {
     fn parse(input: ParseStream) -> Result<Self> {
-        let inner = Field::parse_named(input)?;
-        Ok(Self(inner))
+        let name = input.parse()?;
+        input.parse::<Token![:]>()?;
+        let ty = input.parse()?;
+        Ok(Self { name, ty })
+    }
+}
+
+impl ToTokens for SrcField {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let Self { name, ty } = self;
+        tokens.extend(quote!(#name: #ty));
     }
 }
 

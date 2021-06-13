@@ -1,6 +1,6 @@
 # THISCTX
 
-A simple crate work with [thiserror](https://crates.io/crates/thiserror) to create errors with contexts.
+A simple crate work with [thiserror](https://crates.io/crates/thiserror) to create errors with contexts, inspired by [snafu](https://crates.io/crates/snafu);
 
 ## License
 
