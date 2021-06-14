@@ -37,7 +37,9 @@ mod test {
                     struct (String),
             },
             #[error("I have no idea about this error")]
-            JustFailed { },
+            JustFailed,
+            #[error("it just failed either")]
+            FailedEither,
         }
     }
 }

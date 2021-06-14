@@ -63,14 +63,14 @@ impl ToTokens for EnumDef {
         )
         .to_tokens(tokens);
 
-        // contexts struct definition
+        // contexts definition
         for variant in variants {
             let VariantDef {
                 name: variant_name,
                 body: variant_body,
                 ..
             } = variant;
-            let (ctx_def, ctx_impl) = match variant_body {
+            let (ctx_def, ctx_impl, from_impl) = match variant_body {
                 // unit variant
                 VariantBody::Unit => {
                     let ctx_def = quote!(struct #variant_name;);
@@ -84,15 +84,28 @@ impl ToTokens for EnumDef {
                             }
                         }
                     );
-                    (ctx_def, ctx_impl)
+                    let from_impl = quote!(
+                        impl From<#variant_name> for #enum_name {
+                            fn from(_: #variant_name) -> Self {
+                                Self::#variant_name
+                            }
+                        }
+                    );
+                    (ctx_def, ctx_impl, from_impl)
                 }
                 // struct variant
                 VariantBody::Struct {
                     ctx: ctx_field,
                     src: src_field,
                 } => {
-                    // context definition, field-value pair
-                    let (ctx_def, ctx_field_val) = match ctx_field {
+                    // context definition, context implementation field-value pair
+                    // enum from context implementation parameter name, field-value pair
+                    let (
+                        ctx_def,
+                        ctx_impl_ctx_field_val,
+                        from_impl_ctx_param_name,
+                        from_impl_ctx_field_var,
+                    ) = match ctx_field {
                         Some(CtxField {
                             name: ctx_name,
                             attr: ctx_attr,
@@ -106,33 +119,61 @@ impl ToTokens for EnumDef {
                                     quote!(#(#ctx_attr)* struct #variant_name #ctx_body;)
                                 }
                             };
-                            (ctx_def, quote!(#ctx_name: self,))
+                            (
+                                ctx_def,
+                                quote!(#ctx_name: self,),
+                                quote!(context),
+                                quote!(#ctx_name: context),
+                            )
                         }
-                        None => (quote!(struct #variant_name;), quote!()),
+                        None => (quote!(struct #variant_name;), quote!(), quote!(_), quote!()),
                     };
-                    // source type, parameter name, field-value pair
-                    let (src_ty, src_param_name, src_field_val) = match src_field {
-                        Some(SrcField {
-                            name: src_name,
-                            ty: src_ty,
-                        }) => (quote!(#src_ty), quote!(source), quote!(#src_name: source,)),
-                        None => (quote!(thisctx::private::NoneError), quote!(_), quote!()),
-                    };
+                    // context implementaion source type, parameter name, field-value pair
+                    // enum from context implementation
+                    let (src_ty, ctx_impl_src_param_name, ctx_impl_src_field_val, from_impl) =
+                        match src_field {
+                            Some(SrcField {
+                                name: src_name,
+                                ty: src_ty,
+                            }) => (
+                                quote!(#src_ty),
+                                quote!(source),
+                                quote!(#src_name: source,),
+                                quote!(),
+                            ),
+                            None => {
+                                let from_impl = quote!(
+                                    impl From<#variant_name> for #enum_name {
+                                        fn from(#from_impl_ctx_param_name: #variant_name) -> Self {
+                                            Self::#variant_name { #from_impl_ctx_field_var }
+                                        }
+                                    }
+                                );
+                                (
+                                    quote!(thisctx::private::NoneError),
+                                    quote!(_),
+                                    quote!(),
+                                    from_impl,
+                                )
+                            }
+                        };
+                    // context implementation
                     let ctx_impl = quote!(
                         impl thisctx::private::IntoError for #variant_name {
                             type Error = #enum_name;
                             type Source = #src_ty;
 
-                            fn into_error(self, #src_param_name: Self::Source) -> Self::Error {
-                                Self::Error::#variant_name { #ctx_field_val #src_field_val }
+                            fn into_error(self, #ctx_impl_src_param_name: Self::Source) -> Self::Error {
+                                Self::Error::#variant_name { #ctx_impl_ctx_field_val #ctx_impl_src_field_val }
                             }
                         }
                     );
-                    (ctx_def, ctx_impl)
+                    (ctx_def, ctx_impl, from_impl)
                 }
             };
             ctx_def.to_tokens(tokens);
             ctx_impl.to_tokens(tokens);
+            from_impl.to_tokens(tokens);
         }
     }
 }
