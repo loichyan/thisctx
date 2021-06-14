@@ -15,7 +15,7 @@ impl Parse for ThisCtx {
 
 impl ToTokens for ThisCtx {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        self.0.to_tokens(tokens)
+        self.0.to_tokens(tokens);
     }
 }
 
@@ -50,79 +50,89 @@ impl Parse for EnumDef {
 impl ToTokens for EnumDef {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self {
-            attr,
-            name: err_name,
+            attr: enum_attr,
+            name: enum_name,
             variants,
         } = self;
         // enum definition
-        tokens.extend(quote! (
-            #(#attr)*
-            enum #err_name {
+        quote! (
+            #(#enum_attr)*
+            enum #enum_name {
                 #variants
             }
-        ));
+        )
+        .to_tokens(tokens);
 
-        // context definition
+        // contexts struct definition
         for variant in variants {
             let VariantDef {
-                name: var_name,
-                body,
+                name: variant_name,
+                body: variant_body,
                 ..
             } = variant;
-            let (def, imp) = match body {
+            let (ctx_def, ctx_impl) = match variant_body {
+                // unit variant
                 VariantBody::Unit => {
-                    let def = quote!(struct #var_name;);
-                    let imp = quote!(
-                        impl thisctx::private::IntoError for #var_name {
-                            type Error = #err_name;
+                    let ctx_def = quote!(struct #variant_name;);
+                    let ctx_impl = quote!(
+                        impl thisctx::private::IntoError for #variant_name {
+                            type Error = #enum_name;
                             type Source = thisctx::private::NoneError;
 
                             fn into_error(self, _: Self::Source) -> Self::Error {
-                                Self::Error::#var_name
+                                Self::Error::#variant_name
                             }
                         }
                     );
-                    (def, imp)
+                    (ctx_def, ctx_impl)
                 }
-                VariantBody::Struct { ctx, src } => {
-                    let (def, ctx_field) = match ctx {
-                        Some(CtxField { attr, body, name }) => {
-                            let def = match body {
-                                CtxBody::Struct(body) => quote!(#(#attr)* struct #var_name #body),
-                                CtxBody::Tuple(body) => quote!(#(#attr)* struct #var_name #body;),
+                // struct variant
+                VariantBody::Struct {
+                    ctx: ctx_field,
+                    src: src_field,
+                } => {
+                    // context definition, field-value pair
+                    let (ctx_def, ctx_field_val) = match ctx_field {
+                        Some(CtxField {
+                            name: ctx_name,
+                            attr: ctx_attr,
+                            body: ctx_body,
+                        }) => {
+                            let ctx_def = match ctx_body {
+                                CtxBody::Struct(ctx_body) => {
+                                    quote!(#(#ctx_attr)* struct #variant_name #ctx_body)
+                                }
+                                CtxBody::Tuple(ctx_body) => {
+                                    quote!(#(#ctx_attr)* struct #variant_name #ctx_body;)
+                                }
                             };
-                            (def, quote!(#name: self))
+                            (ctx_def, quote!(#ctx_name: self,))
                         }
-                        None => (quote!(struct #var_name;), quote!()),
+                        None => (quote!(struct #variant_name;), quote!()),
                     };
-                    let imp_tail = match src {
-                        Some(SrcField { name, ty }) => quote!(
-                            type Source = #ty;
-
-                            fn into_error(self, source: Self::Source) -> Self::Error {
-                                let #name = source;
-                                Self::Error::#var_name { #name, #ctx_field }
-                            }
-                        ),
-                        None => quote!(
-                            type Source = thisctx::private::NoneError;
-
-                            fn into_error(self, _: Self::Source) -> Self::Error {
-                                Self::Error::#var_name { #ctx_field }
-                            }
-                        ),
+                    // source type, parameter name, field-value pair
+                    let (src_ty, src_param_name, src_field_val) = match src_field {
+                        Some(SrcField {
+                            name: src_name,
+                            ty: src_ty,
+                        }) => (quote!(#src_ty), quote!(source), quote!(#src_name: source,)),
+                        None => (quote!(thisctx::private::NoneError), quote!(_), quote!()),
                     };
-                    let imp = quote!(
-                        impl thisctx::private::IntoError for #var_name {
-                            type Error = #err_name;
-                            #imp_tail
+                    let ctx_impl = quote!(
+                        impl thisctx::private::IntoError for #variant_name {
+                            type Error = #enum_name;
+                            type Source = #src_ty;
+
+                            fn into_error(self, #src_param_name: Self::Source) -> Self::Error {
+                                Self::Error::#variant_name { #ctx_field_val #src_field_val }
+                            }
                         }
                     );
-                    (def, imp)
+                    (ctx_def, ctx_impl)
                 }
             };
-            tokens.extend(def);
-            tokens.extend(imp);
+            ctx_def.to_tokens(tokens);
+            ctx_impl.to_tokens(tokens);
         }
     }
 }
@@ -156,7 +166,7 @@ impl ToTokens for VariantDef {
                 quote!(#(#attr)* #name { #(#fields,)* })
             }
         };
-        tokens.extend(def)
+        def.to_tokens(tokens);
     }
 }
 
@@ -231,7 +241,7 @@ impl Parse for SrcField {
 impl ToTokens for SrcField {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self { name, ty } = self;
-        tokens.extend(quote!(#name: #ty));
+        quote!(#name: #ty).to_tokens(tokens);
     }
 }
 
