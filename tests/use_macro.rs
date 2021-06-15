@@ -15,6 +15,11 @@ thisctx! {
                     path: std::path::PathBuf,
                 },
         },
+        #[error("I/O failed: {src}")]
+        IoFaildWithoutPath {
+            @source
+            src: std::io::Error,
+        },
         #[error("invalid file '{}': {}", .ctx.path.display(), .ctx.disc)]
         InvalidFile {
             @context
@@ -32,8 +37,13 @@ thisctx! {
                 #[derive(Debug)]
                 struct (String),
         },
+        #[error("invalid argument: '{}'", 0.0)]
+        InvalidArg (
+            #[derive(Debug)]
+            struct (String)
+        ),
         #[error("I have no idea about this error")]
-        JustFailed,
+        JustFailed { },
         #[error("it just failed either")]
         FailedEither,
     }

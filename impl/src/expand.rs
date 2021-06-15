@@ -1,4 +1,4 @@
-use crate::utils::{punctuated_parse, punctuated_tokens, tokens_with, Attributes, Braced};
+use crate::utils::{punctuated_parse, punctuated_tokens, tokens_with, Attributes, Braced, Parened};
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
@@ -127,11 +127,11 @@ impl Variant {
             attr,
         } = self;
         let body = match body {
-            VariantBody::Struct(VariantBodyStruct {
+            VariantBody::Struct {
                 brace_token,
                 src,
                 ctx,
-            }) => {
+            } => {
                 let src_field = match src {
                     SourceField::Some {
                         name,
@@ -154,6 +154,10 @@ impl Variant {
                 })
                 .to_token_stream()
             }
+            VariantBody::Tuple { paren_token, .. } => tokens_with(|tokens| {
+                paren_token.surround(tokens, |tokens| variant_name.to_tokens(tokens))
+            })
+            .to_token_stream(),
             VariantBody::Unit => quote!(),
         };
         quote!(#attr #variant_name #body)
@@ -162,21 +166,22 @@ impl Variant {
     fn gen_context_def(&self) -> TokenStream {
         let Self { name, body, .. } = self;
         match body {
-            VariantBody::Struct(VariantBodyStruct { ctx, .. }) => match ctx {
+            VariantBody::Struct { ctx, .. } => match ctx {
                 ContextField::Some { anon_struct, .. } => anon_struct.gen_struct_def(name),
                 ContextField::None => quote!(struct #name;),
             },
+            VariantBody::Tuple { anno_struct, .. } => anno_struct.gen_struct_def(name),
             VariantBody::Unit => quote!(struct #name;),
         }
     }
 
     fn gen_variant_expr_body(&self) -> Option<TokenStream> {
         match &self.body {
-            VariantBody::Struct(VariantBodyStruct {
+            VariantBody::Struct {
                 brace_token,
                 src,
                 ctx,
-            }) => {
+            } => {
                 let src_field = match src {
                     SourceField::Some { name, .. } => Some(quote!(#name)),
                     SourceField::None => None,
@@ -193,6 +198,12 @@ impl Variant {
                 .to_token_stream();
                 Some(gen)
             }
+            VariantBody::Tuple { paren_token, .. } => Some(
+                tokens_with(|tokens| {
+                    paren_token.surround(tokens, |tokens| quote!(inner).to_tokens(tokens))
+                })
+                .to_token_stream(),
+            ),
             VariantBody::Unit => None,
         }
     }
@@ -204,7 +215,7 @@ impl Variant {
             ..
         } = self;
         let (src_name, src_ty, ctx_assign_stmt) = match body {
-            VariantBody::Struct(VariantBodyStruct { src, ctx, .. }) => {
+            VariantBody::Struct { src, ctx, .. } => {
                 let (src_name, src_ty) = match src {
                     SourceField::Some { name, ty, .. } => (quote!(#name), quote!(#ty)),
                     SourceField::None => (quote!(_), quote!(#NONE_ERROR)),
@@ -214,6 +225,9 @@ impl Variant {
                     ContextField::None => quote!(),
                 };
                 (src_name, src_ty, ctx_assign_stmt)
+            }
+            VariantBody::Tuple { .. } => {
+                (quote!(_), quote!(#NONE_ERROR), quote!(let inner = self;))
             }
             VariantBody::Unit => (quote!(_), quote!(#NONE_ERROR), quote!()),
         };
@@ -241,14 +255,15 @@ impl Variant {
             ..
         } = self;
         let ctx_name = match body {
-            VariantBody::Struct(VariantBodyStruct { src, ctx, .. }) => match src {
+            VariantBody::Struct { src, ctx, .. } => match src {
                 SourceField::Some { .. } => return None,
                 SourceField::None => match ctx {
                     ContextField::Some { name, .. } => quote!(#name),
                     ContextField::None => quote!(_),
                 },
             },
-            VariantBody::Unit => return None,
+            VariantBody::Tuple { .. } => quote!(inner),
+            VariantBody::Unit => quote!(_),
         };
         let variant_expr = match self.gen_variant_expr_body() {
             Some(body) => quote!(Self::#variant_name #body),
@@ -279,57 +294,59 @@ impl Parse for Variant {
 }
 
 enum VariantBody {
-    Struct(VariantBodyStruct),
+    Struct {
+        brace_token: token::Brace,
+        src: SourceField,
+        ctx: ContextField,
+    },
+    Tuple {
+        paren_token: token::Paren,
+        anno_struct: AnonStruct,
+    },
     Unit,
 }
 
 impl Parse for VariantBody {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(token::Brace) {
-            Ok(Self::Struct(input.parse()?))
+            let mut src = SourceField::None;
+            let mut ctx = ContextField::None;
+            let (brace_token, _) = Braced::parse_with(input, |input| {
+                punctuated_parse::<Token![,], _>(input, |input| {
+                    input.parse::<Token![@]>()?;
+                    let lookhead = input.lookahead1();
+                    if lookhead.peek(kw::source) {
+                        if let SourceField::Some { .. } = src {
+                            return Err(input.error("too many sources"));
+                        }
+                        input.parse::<kw::source>()?;
+                        src = input.parse()?;
+                    } else if lookhead.peek(kw::context) {
+                        if let ContextField::Some { .. } = ctx {
+                            return Err(input.error("too many contextx"));
+                        }
+                        input.parse::<kw::context>()?;
+                        ctx = input.parse()?;
+                    } else {
+                        return Err(lookhead.error());
+                    }
+                    Ok(())
+                })
+            })?;
+            Ok(Self::Struct {
+                brace_token,
+                src,
+                ctx,
+            })
+        } else if input.peek(token::Paren) {
+            let (paren_token, anno_struct) = Parened::parse_with(input, AnonStruct::parse)?;
+            Ok(Self::Tuple {
+                paren_token,
+                anno_struct,
+            })
         } else {
             Ok(Self::Unit)
         }
-    }
-}
-
-struct VariantBodyStruct {
-    brace_token: token::Brace,
-    src: SourceField,
-    ctx: ContextField,
-}
-
-impl Parse for VariantBodyStruct {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let mut src = SourceField::None;
-        let mut ctx = ContextField::None;
-        let (brace_token, _) = Braced::parse_with(input, |input| {
-            punctuated_parse::<Token![,], _>(input, |input| {
-                input.parse::<Token![@]>()?;
-                let lookhead = input.lookahead1();
-                if lookhead.peek(kw::source) {
-                    if let SourceField::Some { .. } = src {
-                        return Err(input.error("too many sources"));
-                    }
-                    input.parse::<kw::source>()?;
-                    src = input.parse()?;
-                } else if lookhead.peek(kw::context) {
-                    if let ContextField::Some { .. } = ctx {
-                        return Err(input.error("too many contextx"));
-                    }
-                    input.parse::<kw::context>()?;
-                    ctx = input.parse()?;
-                } else {
-                    return Err(lookhead.error());
-                }
-                Ok(())
-            })
-        })?;
-        Ok(Self {
-            brace_token,
-            src,
-            ctx,
-        })
     }
 }
 

@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{braced, token, Attribute};
+use syn::{braced, parenthesized, token, Attribute};
 
 pub struct TokensWith<F>(F);
 
@@ -39,6 +39,18 @@ impl Braced {
     {
         let braced;
         Ok((braced!(braced in input), f(&braced)?))
+    }
+}
+
+pub struct Parened;
+
+impl Parened {
+    pub fn parse_with<T, F>(input: ParseStream, f: F) -> Result<(token::Paren, T)>
+    where
+        F: FnOnce(ParseStream) -> Result<T>,
+    {
+        let braced;
+        Ok((parenthesized!(braced in input), f(&braced)?))
     }
 }
 
