@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
 use syn::{punctuated::Punctuated, Ident, Token, Type};
-use syn::{token, FieldsNamed, FieldsUnnamed};
+use syn::{token, FieldsNamed, FieldsUnnamed, Visibility};
 
 mod kw {
     use syn::custom_keyword;
@@ -30,6 +30,7 @@ impl ToTokens for ThisCtx {
 
 struct Enum {
     attr: Attributes,
+    vis: Visibility,
     enum_token: token::Enum,
     name: Ident,
     brace_token: token::Brace,
@@ -40,6 +41,7 @@ impl Enum {
     fn gen_enum_def(&self) -> TokenStream {
         let Self {
             attr,
+            vis,
             enum_token,
             name,
             brace_token,
@@ -54,14 +56,14 @@ impl Enum {
                 );
             })
         });
-        quote!(#attr #enum_token #name #body)
+        quote!(#attr #vis #enum_token #name #body)
     }
 
     fn gen_context_def(&self) -> TokenStream {
         tokens_with(|tokens| {
             self.variants
                 .iter()
-                .for_each(|variant| variant.gen_context_def().to_tokens(tokens));
+                .for_each(|variant| variant.gen_context_def(&self.vis).to_tokens(tokens));
         })
         .to_token_stream()
     }
@@ -90,12 +92,14 @@ impl Enum {
 impl Parse for Enum {
     fn parse(input: ParseStream) -> Result<Self> {
         let attr = input.parse()?;
+        let vis = input.parse()?;
         let enum_token = input.parse()?;
         let name = input.parse()?;
         let (brace_token, variants) =
             Braced::parse_with(input, |input| input.parse_terminated(Variant::parse))?;
         Ok(Self {
             attr,
+            vis,
             enum_token,
             name,
             brace_token,
@@ -122,9 +126,9 @@ struct Variant {
 impl Variant {
     fn gen_variant_def(&self) -> TokenStream {
         let Self {
-            body,
-            name: variant_name,
             attr,
+            name: variant_name,
+            body,
         } = self;
         let body = match body {
             VariantBody::Struct {
@@ -163,15 +167,15 @@ impl Variant {
         quote!(#attr #variant_name #body)
     }
 
-    fn gen_context_def(&self) -> TokenStream {
+    fn gen_context_def(&self, vis: &Visibility) -> TokenStream {
         let Self { name, body, .. } = self;
         match body {
             VariantBody::Struct { ctx, .. } => match ctx {
-                ContextField::Some { anon_struct, .. } => anon_struct.gen_struct_def(name),
-                ContextField::None => quote!(struct #name;),
+                ContextField::Some { anon_struct, .. } => anon_struct.gen_struct_def(vis, name),
+                ContextField::None => quote!(#vis struct #name;),
             },
-            VariantBody::Tuple { anno_struct, .. } => anno_struct.gen_struct_def(name),
-            VariantBody::Unit => quote!(struct #name;),
+            VariantBody::Tuple { anno_struct, .. } => anno_struct.gen_struct_def(vis, name),
+            VariantBody::Unit => quote!(#vis struct #name;),
         }
     }
 
@@ -401,7 +405,7 @@ struct AnonStruct {
 }
 
 impl AnonStruct {
-    fn gen_struct_def(&self, name: &Ident) -> TokenStream {
+    fn gen_struct_def(&self, vis: &Visibility, name: &Ident) -> TokenStream {
         let Self {
             attr,
             struct_token,
@@ -415,7 +419,7 @@ impl AnonStruct {
             }
             StructBody::Unit => quote!(;),
         };
-        quote!(#attr #struct_token #name #body)
+        quote!(#attr #vis #struct_token #name #body)
     }
 }
 

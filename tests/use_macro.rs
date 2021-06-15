@@ -3,7 +3,7 @@ use thiserror::Error;
 
 thisctx! {
     #[derive(Debug, Error)]
-    enum Error {
+    pub enum Error {
         #[error("I/O failed '{}': {src}", .ctx.path.display())]
         IoFaild {
             @source
