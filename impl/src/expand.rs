@@ -148,7 +148,6 @@ impl Variant {
                     ContextField::Some {
                         name, colon_token, ..
                     } => Some(quote!(#name #colon_token #variant_name)),
-
                     ContextField::None => None,
                 };
                 tokens_with(|tokens| {
@@ -158,10 +157,16 @@ impl Variant {
                 })
                 .to_token_stream()
             }
-            VariantBody::Tuple { paren_token, .. } => tokens_with(|tokens| {
-                paren_token.surround(tokens, |tokens| variant_name.to_tokens(tokens))
-            })
-            .to_token_stream(),
+            VariantBody::Tuple {
+                paren_token,
+                anon_struct,
+            } => match anon_struct {
+                Some(_) => tokens_with(|tokens| {
+                    paren_token.surround(tokens, |tokens| variant_name.to_tokens(tokens))
+                })
+                .to_token_stream(),
+                None => quote!(),
+            },
             VariantBody::Unit => quote!(),
         };
         quote!(#attr #variant_name #body)
@@ -174,7 +179,10 @@ impl Variant {
                 ContextField::Some { anon_struct, .. } => anon_struct.gen_struct_def(vis, name),
                 ContextField::None => quote!(#vis struct #name;),
             },
-            VariantBody::Tuple { anno_struct, .. } => anno_struct.gen_struct_def(vis, name),
+            VariantBody::Tuple { anon_struct, .. } => match anon_struct {
+                Some(anon_struct) => anon_struct.gen_struct_def(vis, name),
+                None => quote!(#vis struct #name;),
+            },
             VariantBody::Unit => quote!(#vis struct #name;),
         }
     }
@@ -202,12 +210,18 @@ impl Variant {
                 .to_token_stream();
                 Some(gen)
             }
-            VariantBody::Tuple { paren_token, .. } => Some(
-                tokens_with(|tokens| {
-                    paren_token.surround(tokens, |tokens| quote!(inner).to_tokens(tokens))
-                })
-                .to_token_stream(),
-            ),
+            VariantBody::Tuple {
+                paren_token,
+                anon_struct,
+            } => match anon_struct {
+                Some(..) => Some(
+                    tokens_with(|tokens| {
+                        paren_token.surround(tokens, |tokens| quote!(inner).to_tokens(tokens))
+                    })
+                    .to_token_stream(),
+                ),
+                None => None,
+            },
             VariantBody::Unit => None,
         }
     }
@@ -305,7 +319,7 @@ enum VariantBody {
     },
     Tuple {
         paren_token: token::Paren,
-        anno_struct: AnonStruct,
+        anon_struct: Option<AnonStruct>,
     },
     Unit,
 }
@@ -343,10 +357,16 @@ impl Parse for VariantBody {
                 ctx,
             })
         } else if input.peek(token::Paren) {
-            let (paren_token, anno_struct) = Parened::parse_with(input, AnonStruct::parse)?;
+            let mut anon_struct = None;
+            let (paren_token, _) = Parened::parse_with(input, |input| {
+                punctuated_parse::<Token![,], _>(input, |input| {
+                    anon_struct = Some(input.parse()?);
+                    Ok(())
+                })
+            })?;
             Ok(Self::Tuple {
                 paren_token,
-                anno_struct,
+                anon_struct,
             })
         } else {
             Ok(Self::Unit)

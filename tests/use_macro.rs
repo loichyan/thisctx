@@ -45,6 +45,6 @@ thisctx! {
         #[error("I have no idea about this error")]
         JustFailed { },
         #[error("it just failed either")]
-        FailedEither,
+        FailedEither ( ),
     }
 }
