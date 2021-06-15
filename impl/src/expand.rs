@@ -1,23 +1,9 @@
+use crate::utils::{punctuated_parse, punctuated_tokens, tokens_with, Attributes, Braced};
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
-use syn::punctuated::Punctuated;
-use syn::{braced, token, Attribute, FieldsNamed, FieldsUnnamed, Ident, Token, Type};
-
-pub struct ThisCtx(EnumDef);
-
-impl Parse for ThisCtx {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let inner = input.parse()?;
-        Ok(Self(inner))
-    }
-}
-
-impl ToTokens for ThisCtx {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        self.0.to_tokens(tokens);
-    }
-}
+use syn::{punctuated::Punctuated, Ident, Token, Type};
+use syn::{token, FieldsNamed, FieldsUnnamed};
 
 mod kw {
     use syn::custom_keyword;
@@ -25,300 +11,424 @@ mod kw {
     custom_keyword!(context);
 }
 
-struct EnumDef {
-    attr: Vec<Attribute>,
-    name: Ident,
-    variants: Punctuated<VariantDef, Token![,]>,
+const INTO_ERROR: crate::shared::IntoError = crate::shared::IntoError;
+const NONE_ERROR: crate::shared::NoneError = crate::shared::NoneError;
+
+pub struct ThisCtx(Enum);
+
+impl Parse for ThisCtx {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(Self(input.parse()?))
+    }
 }
 
-impl Parse for EnumDef {
+impl ToTokens for ThisCtx {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.0.to_tokens(tokens)
+    }
+}
+
+struct Enum {
+    attr: Attributes,
+    enum_token: token::Enum,
+    name: Ident,
+    brace_token: token::Brace,
+    variants: Punctuated<Variant, Token![,]>,
+}
+
+impl Enum {
+    fn gen_enum_def(&self) -> TokenStream {
+        let Self {
+            attr,
+            enum_token,
+            name,
+            brace_token,
+            variants,
+        } = self;
+        let body = tokens_with(|tokens| {
+            brace_token.surround(tokens, |tokens| {
+                punctuated_tokens(
+                    tokens,
+                    quote!(,),
+                    variants.iter().map(Variant::gen_variant_def),
+                );
+            })
+        });
+        quote!(#attr #enum_token #name #body)
+    }
+
+    fn gen_context_def(&self) -> TokenStream {
+        tokens_with(|tokens| {
+            self.variants
+                .iter()
+                .for_each(|variant| variant.gen_context_def().to_tokens(tokens));
+        })
+        .to_token_stream()
+    }
+
+    fn gen_impl_into_error(&self) -> TokenStream {
+        tokens_with(|tokens| {
+            self.variants
+                .iter()
+                .for_each(|variant| variant.gen_impl_into_error(&self.name).to_tokens(tokens));
+        })
+        .to_token_stream()
+    }
+
+    fn gen_from_ctx_for_enum(&self) -> TokenStream {
+        tokens_with(|tokens| {
+            self.variants.iter().for_each(|variant| {
+                variant
+                    .gen_impl_from_ctx_for_enum(&self.name)
+                    .to_tokens(tokens)
+            });
+        })
+        .to_token_stream()
+    }
+}
+
+impl Parse for Enum {
     fn parse(input: ParseStream) -> Result<Self> {
-        let attr = input.call(Attribute::parse_outer)?;
-        input.parse::<Token![enum]>()?;
+        let attr = input.parse()?;
+        let enum_token = input.parse()?;
         let name = input.parse()?;
-        let brace;
-        braced!(brace in input);
-        let variants = brace.parse_terminated(VariantDef::parse)?;
+        let (brace_token, variants) =
+            Braced::parse_with(input, |input| input.parse_terminated(Variant::parse))?;
         Ok(Self {
             attr,
+            enum_token,
             name,
+            brace_token,
             variants,
         })
     }
 }
 
-impl ToTokens for EnumDef {
+impl ToTokens for Enum {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self {
-            attr: enum_attr,
-            name: enum_name,
-            variants,
-        } = self;
-        // enum definition
-        quote! (
-            #(#enum_attr)*
-            enum #enum_name {
-                #variants
-            }
-        )
-        .to_tokens(tokens);
-
-        // contexts definition
-        for variant in variants {
-            let VariantDef {
-                name: variant_name,
-                body: variant_body,
-                ..
-            } = variant;
-            let (ctx_def, ctx_impl, from_impl) = match variant_body {
-                // unit variant
-                VariantBody::Unit => {
-                    let ctx_def = quote!(struct #variant_name;);
-                    let ctx_impl = quote!(
-                        impl thisctx::private::IntoError for #variant_name {
-                            type Error = #enum_name;
-                            type Source = thisctx::private::NoneError;
-
-                            fn into_error(self, _: Self::Source) -> Self::Error {
-                                Self::Error::#variant_name
-                            }
-                        }
-                    );
-                    let from_impl = quote!(
-                        impl From<#variant_name> for #enum_name {
-                            fn from(_: #variant_name) -> Self {
-                                Self::#variant_name
-                            }
-                        }
-                    );
-                    (ctx_def, ctx_impl, from_impl)
-                }
-                // struct variant
-                VariantBody::Struct {
-                    ctx: ctx_field,
-                    src: src_field,
-                } => {
-                    // context definition, context implementation field-value pair
-                    // enum from context implementation parameter name, field-value pair
-                    let (
-                        ctx_def,
-                        ctx_impl_ctx_field_val,
-                        from_impl_ctx_param_name,
-                        from_impl_ctx_field_var,
-                    ) = match ctx_field {
-                        Some(CtxField {
-                            name: ctx_name,
-                            attr: ctx_attr,
-                            body: ctx_body,
-                        }) => {
-                            let ctx_def = match ctx_body {
-                                CtxBody::Struct(ctx_body) => {
-                                    quote!(#(#ctx_attr)* struct #variant_name #ctx_body)
-                                }
-                                CtxBody::Tuple(ctx_body) => {
-                                    quote!(#(#ctx_attr)* struct #variant_name #ctx_body;)
-                                }
-                            };
-                            (
-                                ctx_def,
-                                quote!(#ctx_name: self,),
-                                quote!(context),
-                                quote!(#ctx_name: context),
-                            )
-                        }
-                        None => (quote!(struct #variant_name;), quote!(), quote!(_), quote!()),
-                    };
-                    // context implementaion source type, parameter name, field-value pair
-                    // enum from context implementation
-                    let (src_ty, ctx_impl_src_param_name, ctx_impl_src_field_val, from_impl) =
-                        match src_field {
-                            Some(SrcField {
-                                name: src_name,
-                                ty: src_ty,
-                            }) => (
-                                quote!(#src_ty),
-                                quote!(source),
-                                quote!(#src_name: source,),
-                                quote!(),
-                            ),
-                            None => {
-                                let from_impl = quote!(
-                                    impl From<#variant_name> for #enum_name {
-                                        fn from(#from_impl_ctx_param_name: #variant_name) -> Self {
-                                            Self::#variant_name { #from_impl_ctx_field_var }
-                                        }
-                                    }
-                                );
-                                (
-                                    quote!(thisctx::private::NoneError),
-                                    quote!(_),
-                                    quote!(),
-                                    from_impl,
-                                )
-                            }
-                        };
-                    // context implementation
-                    let ctx_impl = quote!(
-                        impl thisctx::private::IntoError for #variant_name {
-                            type Error = #enum_name;
-                            type Source = #src_ty;
-
-                            fn into_error(self, #ctx_impl_src_param_name: Self::Source) -> Self::Error {
-                                Self::Error::#variant_name { #ctx_impl_ctx_field_val #ctx_impl_src_field_val }
-                            }
-                        }
-                    );
-                    (ctx_def, ctx_impl, from_impl)
-                }
-            };
-            ctx_def.to_tokens(tokens);
-            ctx_impl.to_tokens(tokens);
-            from_impl.to_tokens(tokens);
-        }
+        self.gen_enum_def().to_tokens(tokens);
+        self.gen_context_def().to_tokens(tokens);
+        self.gen_impl_into_error().to_tokens(tokens);
+        self.gen_from_ctx_for_enum().to_tokens(tokens);
     }
 }
 
-struct VariantDef {
-    attr: Vec<Attribute>,
+struct Variant {
+    attr: Attributes,
     name: Ident,
     body: VariantBody,
 }
 
-impl Parse for VariantDef {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let attr = input.call(Attribute::parse_outer)?;
-        let name = input.parse()?;
-        let body = input.parse()?;
-        Ok(Self { attr, name, body })
+impl Variant {
+    fn gen_variant_def(&self) -> TokenStream {
+        let Self {
+            body,
+            name: variant_name,
+            attr,
+        } = self;
+        let body = match body {
+            VariantBody::Struct(VariantBodyStruct {
+                brace_token,
+                src,
+                ctx,
+            }) => {
+                let src_field = match src {
+                    SourceField::Some {
+                        name,
+                        colon_token,
+                        ty,
+                    } => Some(quote!(#name #colon_token #ty)),
+                    SourceField::None => None,
+                };
+                let ctx_field = match ctx {
+                    ContextField::Some {
+                        name, colon_token, ..
+                    } => Some(quote!(#name #colon_token #variant_name)),
+
+                    ContextField::None => None,
+                };
+                tokens_with(|tokens| {
+                    brace_token.surround(tokens, |tokens| {
+                        punctuated_tokens(tokens, quote!(,), src_field.iter().chain(&ctx_field))
+                    })
+                })
+                .to_token_stream()
+            }
+            VariantBody::Unit => quote!(),
+        };
+        quote!(#attr #variant_name #body)
+    }
+
+    fn gen_context_def(&self) -> TokenStream {
+        let Self { name, body, .. } = self;
+        match body {
+            VariantBody::Struct(VariantBodyStruct { ctx, .. }) => match ctx {
+                ContextField::Some { anon_struct, .. } => anon_struct.gen_struct_def(name),
+                ContextField::None => quote!(struct #name;),
+            },
+            VariantBody::Unit => quote!(struct #name;),
+        }
+    }
+
+    fn gen_variant_expr_body(&self) -> Option<TokenStream> {
+        match &self.body {
+            VariantBody::Struct(VariantBodyStruct {
+                brace_token,
+                src,
+                ctx,
+            }) => {
+                let src_field = match src {
+                    SourceField::Some { name, .. } => Some(quote!(#name)),
+                    SourceField::None => None,
+                };
+                let ctx_field = match ctx {
+                    ContextField::Some { name, .. } => Some(quote!(#name)),
+                    ContextField::None => None,
+                };
+                let gen = tokens_with(|tokens| {
+                    brace_token.surround(tokens, |tokens| {
+                        punctuated_tokens(tokens, quote!(,), src_field.iter().chain(&ctx_field))
+                    })
+                })
+                .to_token_stream();
+                Some(gen)
+            }
+            VariantBody::Unit => None,
+        }
+    }
+
+    fn gen_impl_into_error(&self, enum_name: &Ident) -> TokenStream {
+        let Self {
+            name: variant_name,
+            body,
+            ..
+        } = self;
+        let (src_name, src_ty, ctx_assign_stmt) = match body {
+            VariantBody::Struct(VariantBodyStruct { src, ctx, .. }) => {
+                let (src_name, src_ty) = match src {
+                    SourceField::Some { name, ty, .. } => (quote!(#name), quote!(#ty)),
+                    SourceField::None => (quote!(_), quote!(#NONE_ERROR)),
+                };
+                let ctx_assign_stmt = match ctx {
+                    ContextField::Some { name, .. } => quote!(let #name = self;),
+                    ContextField::None => quote!(),
+                };
+                (src_name, src_ty, ctx_assign_stmt)
+            }
+            VariantBody::Unit => (quote!(_), quote!(#NONE_ERROR), quote!()),
+        };
+        let variant_expr = match self.gen_variant_expr_body() {
+            Some(body) => quote!(Self::Error::#variant_name #body),
+            None => quote!(Self::Error::#variant_name),
+        };
+        quote!(
+            impl #INTO_ERROR for #variant_name {
+                type Error = #enum_name;
+                type Source = #src_ty;
+
+                fn into_error(self, #src_name: Self::Source) -> Self::Error {
+                    #ctx_assign_stmt
+                    #variant_expr
+                }
+            }
+        )
+    }
+
+    fn gen_impl_from_ctx_for_enum(&self, enum_name: &Ident) -> Option<TokenStream> {
+        let Self {
+            name: variant_name,
+            body,
+            ..
+        } = self;
+        let ctx_name = match body {
+            VariantBody::Struct(VariantBodyStruct { src, ctx, .. }) => match src {
+                SourceField::Some { .. } => return None,
+                SourceField::None => match ctx {
+                    ContextField::Some { name, .. } => quote!(#name),
+                    ContextField::None => quote!(_),
+                },
+            },
+            VariantBody::Unit => return None,
+        };
+        let variant_expr = match self.gen_variant_expr_body() {
+            Some(body) => quote!(Self::#variant_name #body),
+            None => quote!(Self::#variant_name),
+        };
+        let gen = quote!(
+            impl From<#variant_name> for #enum_name {
+                fn from(#ctx_name: #variant_name) -> Self {
+                    #variant_expr
+                }
+            }
+        );
+        Some(gen)
     }
 }
 
-impl ToTokens for VariantDef {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self { attr, name, body } = self;
-        let def = match body {
-            VariantBody::Unit => quote!(#(#attr)* #name),
-            VariantBody::Struct { src, ctx } => {
-                let src = src.as_ref().map(|src| quote!(#src));
-                let ctx = ctx
-                    .as_ref()
-                    .map(|CtxField { name: ctx, .. }| quote!(#ctx: #name));
-                let fields = src.into_iter().chain(ctx);
-                quote!(#(#attr)* #name { #(#fields,)* })
-            }
-        };
-        def.to_tokens(tokens);
+impl Parse for Variant {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let attr = input.parse()?;
+        let variant_name = input.parse()?;
+        let body = input.parse()?;
+        Ok(Self {
+            attr,
+            name: variant_name,
+            body,
+        })
     }
 }
 
 enum VariantBody {
+    Struct(VariantBodyStruct),
     Unit,
-    Struct {
-        src: Option<SrcField>,
-        ctx: Option<CtxField>,
-    },
 }
 
 impl Parse for VariantBody {
     fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek(Token![,]) {
-            Ok(Self::Unit)
+        if input.peek(token::Brace) {
+            Ok(Self::Struct(input.parse()?))
         } else {
-            let mut src = None;
-            let mut ctx = None;
-
-            let brace;
-            braced!(brace in input);
-            loop {
-                if brace.is_empty() {
-                    break;
-                }
-                brace.parse::<Token![@]>()?;
-                let lookhead = brace.lookahead1();
-
-                if lookhead.peek(kw::source) {
-                    if src.is_some() {
-                        return Err(brace.error("multi source provided"));
-                    }
-                    brace.parse::<kw::source>()?;
-                    let inner = brace.parse()?;
-                    src = Some(inner);
-                } else if lookhead.peek(kw::context) {
-                    if ctx.is_some() {
-                        return Err(brace.error("multi context provided"));
-                    }
-                    brace.parse::<kw::context>()?;
-                    let inner = brace.parse()?;
-                    ctx = Some(inner);
-                } else {
-                    return Err(lookhead.error());
-                }
-
-                if brace.is_empty() {
-                    break;
-                }
-                brace.parse::<Token![,]>()?;
-            }
-
-            Ok(Self::Struct { src, ctx })
+            Ok(Self::Unit)
         }
     }
 }
 
-struct SrcField {
-    name: Ident,
-    ty: Type,
+struct VariantBodyStruct {
+    brace_token: token::Brace,
+    src: SourceField,
+    ctx: ContextField,
 }
 
-impl Parse for SrcField {
+impl Parse for VariantBodyStruct {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut src = SourceField::None;
+        let mut ctx = ContextField::None;
+        let (brace_token, _) = Braced::parse_with(input, |input| {
+            punctuated_parse::<Token![,], _>(input, |input| {
+                input.parse::<Token![@]>()?;
+                let lookhead = input.lookahead1();
+                if lookhead.peek(kw::source) {
+                    if let SourceField::Some { .. } = src {
+                        return Err(input.error("too many sources"));
+                    }
+                    input.parse::<kw::source>()?;
+                    src = input.parse()?;
+                } else if lookhead.peek(kw::context) {
+                    if let ContextField::Some { .. } = ctx {
+                        return Err(input.error("too many contextx"));
+                    }
+                    input.parse::<kw::context>()?;
+                    ctx = input.parse()?;
+                } else {
+                    return Err(lookhead.error());
+                }
+                Ok(())
+            })
+        })?;
+        Ok(Self {
+            brace_token,
+            src,
+            ctx,
+        })
+    }
+}
+
+enum SourceField {
+    Some {
+        name: Ident,
+        colon_token: Token![:],
+        ty: Type,
+    },
+    None,
+}
+
+impl Parse for SourceField {
     fn parse(input: ParseStream) -> Result<Self> {
         let name = input.parse()?;
-        input.parse::<Token![:]>()?;
+        let colon_token = input.parse()?;
         let ty = input.parse()?;
-        Ok(Self { name, ty })
+        Ok(Self::Some {
+            name,
+            colon_token,
+            ty,
+        })
     }
 }
 
-impl ToTokens for SrcField {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self { name, ty } = self;
-        quote!(#name: #ty).to_tokens(tokens);
-    }
+enum ContextField {
+    Some {
+        name: Ident,
+        colon_token: Token![:],
+        anon_struct: AnonStruct,
+    },
+    None,
 }
 
-struct CtxField {
-    name: Ident,
-    attr: Vec<Attribute>,
-    body: CtxBody,
-}
-
-impl Parse for CtxField {
+impl Parse for ContextField {
     fn parse(input: ParseStream) -> Result<Self> {
         let name = input.parse()?;
-        input.parse::<Token![:]>()?;
-        let attr = input.call(Attribute::parse_outer)?;
-        input.parse::<Token![struct]>()?;
-        let body = input.parse()?;
-        Ok(Self { name, attr, body })
+        let colon_token = input.parse()?;
+        let anon_struct = input.parse()?;
+        Ok(Self::Some {
+            name,
+            colon_token,
+            anon_struct,
+        })
     }
 }
 
-enum CtxBody {
+struct AnonStruct {
+    attr: Attributes,
+    struct_token: Token![struct],
+    body: StructBody,
+}
+
+impl AnonStruct {
+    fn gen_struct_def(&self, name: &Ident) -> TokenStream {
+        let Self {
+            attr,
+            struct_token,
+            body,
+        } = self;
+        let body = match body {
+            StructBody::Struct(named) => quote!(#named),
+            StructBody::Tuple(unnamed) => {
+                let content = quote!(#unnamed);
+                quote!(#content;)
+            }
+            StructBody::Unit => quote!(;),
+        };
+        quote!(#attr #struct_token #name #body)
+    }
+}
+
+impl Parse for AnonStruct {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let attr = input.parse()?;
+        let struct_token = input.parse()?;
+        let body = input.parse()?;
+        Ok(Self {
+            attr,
+            struct_token,
+            body,
+        })
+    }
+}
+
+enum StructBody {
     Struct(FieldsNamed),
     Tuple(FieldsUnnamed),
+    Unit,
 }
 
-impl Parse for CtxBody {
+impl Parse for StructBody {
     fn parse(input: ParseStream) -> Result<Self> {
-        let lookhead = input.lookahead1();
-        if lookhead.peek(token::Brace) {
-            let inner = input.parse()?;
-            Ok(Self::Struct(inner))
-        } else if lookhead.peek(token::Paren) {
-            let inner = input.parse()?;
-            Ok(Self::Tuple(inner))
+        if input.peek(token::Brace) {
+            Ok(Self::Struct(input.parse()?))
+        } else if input.peek(token::Paren) {
+            Ok(Self::Tuple(input.parse()?))
         } else {
-            Err(lookhead.error())
+            Ok(Self::Unit)
         }
     }
 }
