@@ -12,7 +12,7 @@ thisctx! {
             ctx:
                 #[derive(Debug)]
                 struct {
-                    path: std::path::PathBuf,
+                    pub path: std::path::PathBuf,
                 },
         },
         #[error("I/O failed: {src}")]
@@ -20,14 +20,14 @@ thisctx! {
             @source
             src: std::io::Error,
         },
-        #[error("invalid file '{}': {}", .ctx.path.display(), .ctx.disc)]
+        #[error("invalid file '{}': {}", .ctx.path.display(), .ctx.desc)]
         InvalidFile {
             @context
             ctx:
                 #[derive(Debug)]
                 struct {
-                    disc: String,
-                    path: std::path::PathBuf,
+                    pub desc: String,
+                    pub path: std::path::PathBuf,
                 },
         },
         #[error("invalid option: '{}'", .ctx.0)]

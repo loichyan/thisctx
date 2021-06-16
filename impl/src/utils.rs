@@ -79,12 +79,13 @@ where
     Ok(())
 }
 
-pub fn punctuated_tokens<P, T, I>(tokens: &mut TokenStream, punct: P, iter: I)
+pub fn punctuated_tokens<P, T, I>(tokens: &mut TokenStream, iter: I)
 where
-    P: ToTokens,
+    P: ToTokens + Default,
     T: ToTokens,
     I: IntoIterator<Item = T>,
 {
+    let punct = P::default();
     iter.into_iter().for_each(|item| {
         let item = item.to_token_stream();
         if item.is_empty() {
