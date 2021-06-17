@@ -7,32 +7,50 @@ pub trait IntoError {
     fn into_error(self, source: Self::Source) -> Self::Error;
 }
 
-pub trait ResultExt<T, E> {
-    fn context<C>(self, context: C) -> Result<T, C::Error>
+pub trait ResultExt<T, E>: Sized {
+    fn context_with<C, F>(self, f: F) -> Result<T, C::Error>
     where
-        C: IntoError<Source = E>;
-}
+        C: IntoError<Source = E>,
+        F: FnOnce() -> C;
 
-impl<T, E> ResultExt<T, E> for Result<T, E> {
     fn context<C>(self, context: C) -> Result<T, C::Error>
     where
         C: IntoError<Source = E>,
     {
-        self.map_err(|e| context.into_error(e))
+        self.context_with(|| context)
     }
 }
 
-pub trait OptionExt<T> {
-    fn context<C>(self, context: C) -> Result<T, C::Error>
+impl<T, E> ResultExt<T, E> for Result<T, E> {
+    fn context_with<C, F>(self, f: F) -> Result<T, C::Error>
     where
-        C: IntoError<Source = NoneError>;
+        C: IntoError<Source = E>,
+        F: FnOnce() -> C,
+    {
+        self.map_err(|e| f().into_error(e))
+    }
 }
 
-impl<T> OptionExt<T> for Option<T> {
+pub trait OptionExt<T>: Sized {
+    fn context_with<C, F>(self, f: F) -> Result<T, C::Error>
+    where
+        C: IntoError<Source = NoneError>,
+        F: FnOnce() -> C;
+
     fn context<C>(self, context: C) -> Result<T, C::Error>
     where
         C: IntoError<Source = NoneError>,
     {
-        self.ok_or_else(|| context.into_error(NoneError))
+        self.context_with(|| context)
+    }
+}
+
+impl<T> OptionExt<T> for Option<T> {
+    fn context_with<C, F>(self, f: F) -> Result<T, C::Error>
+    where
+        C: IntoError<Source = NoneError>,
+        F: FnOnce() -> C,
+    {
+        self.ok_or_else(|| f().into_error(NoneError))
     }
 }
