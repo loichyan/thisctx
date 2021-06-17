@@ -30,15 +30,17 @@ thisctx! {
                     pub path: std::path::PathBuf,
                 },
         },
-        #[error("invalid option: '{}'", .ctx.0)]
-        InvalidOpt {
+        #[error("invalid option: '{}'", 0.0)]
+        InvalidOpt (
             @context
-            ctx:
-                #[derive(Debug)]
-                struct (String),
-        },
-        #[error("invalid argument: '{}'", 0.0)]
+            #[derive(Debug)]
+            struct (String),
+        ),
+        #[error("invalid argument: '{}'", 1.0)]
         InvalidArg (
+            @source
+            thisctx::NoneError,
+            @context
             #[derive(Debug)]
             struct (String)
         ),

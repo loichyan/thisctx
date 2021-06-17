@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct NoneError;
 
 pub trait IntoError {
