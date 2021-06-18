@@ -5,6 +5,9 @@ authors = ["loichyan <loichyan@foxmail.com>"]
 edition = "2018"
 license = "MIT"
 
+description = "Macro implementation of the `thisctx` crate"
+repository = "https://github.com/loichyan/thisctx"
+
 [lib]
 proc-macro = true
 
