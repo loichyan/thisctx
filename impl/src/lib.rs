@@ -1,3 +1,5 @@
+//! Macro implementation of the [thisctx](https://crates.io/crates/thisctx) crate.
+
 mod expand;
 mod shared;
 mod utils;

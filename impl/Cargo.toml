@@ -6,7 +6,9 @@ edition = "2018"
 license = "MIT"
 
 description = "Macro implementation of the `thisctx` crate"
+readme = "README.md"
 repository = "https://github.com/loichyan/thisctx"
+documentation = "https://docs.rs/thisctx"
 
 [lib]
 proc-macro = true
