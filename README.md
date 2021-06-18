@@ -13,6 +13,7 @@ thisctx! {
     pub enum Error {
         #[error("I/O failed '{}': {src}", .ctx.path.display())]
         IoFaild {
+            #[source]
             @source
             src: std::io::Error,
             @context
@@ -32,8 +33,15 @@ thisctx! {
                     path: std::path::PathBuf,
                 },
         },
+        #[error("not UTF-8: {0}")]
+        NotUtf8 (
+            #[source]
+            @source
+            std::str::Utf8Error
+        ),
         #[error("invalid argument: '{}'", 0.0)]
         InvalidArg (
+            @context
             #[derive(Debug)]
             struct (String)
         ),

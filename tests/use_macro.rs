@@ -6,6 +6,7 @@ thisctx! {
     pub enum Error {
         #[error("I/O failed '{}': {src}", .ctx.path.display())]
         IoFaild {
+            #[source]
             @source
             src: std::io::Error,
             @context
@@ -17,6 +18,7 @@ thisctx! {
         },
         #[error("I/O failed: {src}")]
         IoFaildWithoutPath {
+            #[source]
             @source
             src: std::io::Error,
         },
@@ -38,6 +40,7 @@ thisctx! {
         ),
         #[error("invalid argument: '{}'", 1.0)]
         InvalidArg (
+            #[source]
             @source
             thisctx::NoneError,
             @context

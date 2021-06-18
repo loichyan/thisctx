@@ -162,6 +162,7 @@ impl Variant {
                  name,
                  colon_token,
                  anon_struct,
+                 ..
              }| {
                 let from = quote!(self);
                 let convert_struct_body = anon_struct
@@ -185,6 +186,7 @@ impl Variant {
         )
     }
 
+    // TODO: impl from source for enum
     fn to_impl_from_ctx_for_enum(&self, enum_name: &Ident) -> Option<TokenStream> {
         let Self {
             name: variant_name,
@@ -201,6 +203,7 @@ impl Variant {
                  name,
                  colon_token,
                  anon_struct,
+                 ..
              }| {
                 let convert_struct_body = anon_struct
                     .body
@@ -241,6 +244,7 @@ impl ToTokens for Variant {
         let struct_body = body.map_fields(
             SourceField::to_token_stream,
             |ContextField {
+                 attrs,
                  name,
                  colon_token,
                  anon_struct,
@@ -248,7 +252,7 @@ impl ToTokens for Variant {
                 let generic = anon_struct
                     .body
                     .map_fields_to_generic(StructBody::GENERIC_TY_F);
-                quote!(#name #colon_token #variant_name #generic)
+                quote!(#attrs #name #colon_token #variant_name #generic)
             },
         );
         attrs.to_tokens(tokens);
@@ -334,6 +338,7 @@ impl VariantFields {
         let mut src = None;
         let mut ctx = None;
         Punctuated::<_, Token![,]>::visit_parse_with(input, |input| {
+            let attrs = input.parse()?;
             input.parse::<Token![@]>()?;
             let lookhead = input.lookahead1();
             if lookhead.peek(kw::source) {
@@ -344,6 +349,7 @@ impl VariantFields {
                 let (name, colon_token) = parse_name_colon_token()?;
                 let ty = input.parse()?;
                 src = Some(SourceField {
+                    attrs,
                     name,
                     colon_token,
                     ty,
@@ -356,6 +362,7 @@ impl VariantFields {
                 let (name, colon_token) = parse_name_colon_token()?;
                 let anon_struct = input.parse()?;
                 ctx = Some(ContextField {
+                    attrs,
                     name,
                     colon_token,
                     anon_struct,
@@ -371,6 +378,7 @@ impl VariantFields {
 }
 
 struct SourceField {
+    attrs: Attributes,
     name: Option<Ident>,
     colon_token: Option<Token![:]>,
     ty: Type,
@@ -379,10 +387,12 @@ struct SourceField {
 impl ToTokens for SourceField {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self {
+            attrs,
             name,
             colon_token,
             ty,
         } = self;
+        attrs.to_tokens(tokens);
         name.to_tokens(tokens);
         colon_token.to_tokens(tokens);
         ty.to_tokens(tokens);
@@ -390,6 +400,7 @@ impl ToTokens for SourceField {
 }
 
 struct ContextField {
+    attrs: Attributes,
     name: Option<Ident>,
     colon_token: Option<Token![:]>,
     anon_struct: AnonStruct,

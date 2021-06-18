@@ -1,6 +1,14 @@
 #[derive(Debug)]
 pub struct NoneError;
 
+impl std::fmt::Display for NoneError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "an placeholder for none source error variant")
+    }
+}
+
+impl std::error::Error for NoneError {}
+
 pub trait IntoError {
     type Error;
     type Source;
