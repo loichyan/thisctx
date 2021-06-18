@@ -1,17 +1,19 @@
 # THISCTX
 
-A simple crate work with [thiserror](https://crates.io/crates/thiserror) to create errors with contexts, inspired by [snafu](https://crates.io/crates/snafu);
+A simple crate work with [thiserror](https://crates.io/crates/thiserror) to create errors with contexts, inspired by [snafu](https://crates.io/crates/snafu).
 
 ## Examples
 
 ```rust
-use thisctx::thisctx;
+use std::fs;
+use std::path::{Path, PathBuf};
+use thisctx::{thisctx, ResultExt};
 use thiserror::Error;
 
 thisctx! {
     #[derive(Debug, Error)]
     pub enum Error {
-        #[error("I/O failed '{}': {src}", .ctx.path.display())]
+        #[error("I/O failed '{}': {src}", .ctx.0.display())]
         IoFaild {
             #[source]
             @source
@@ -19,35 +21,13 @@ thisctx! {
             @context
             ctx:
                 #[derive(Debug)]
-                struct {
-                    path: std::path::PathBuf,
-                },
+                struct (PathBuf),
         },
-        #[error("invalid file '{}': {}", .ctx.path.display(), .ctx.disc)]
-        InvalidFile {
-            @context
-            ctx:
-                #[derive(Debug)]
-                struct {
-                    disc: String,
-                    path: std::path::PathBuf,
-                },
-        },
-        #[error("not UTF-8: {0}")]
-        NotUtf8 (
-            #[source]
-            @source
-            std::str::Utf8Error
-        ),
-        #[error("invalid argument: '{}'", 0.0)]
-        InvalidArg (
-            @context
-            #[derive(Debug)]
-            struct (String)
-        ),
-        #[error("I have no idea about this error")]
-        JustFailed,
     }
+}
+
+fn load_config(path: &Path) -> Result<String, Error> {
+    fs::read_to_string(path).context(IoFaild(path))
 }
 ```
 

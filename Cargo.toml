@@ -5,11 +5,19 @@ authors = ["loichyan <loichyan@foxmail.com>"]
 edition = "2018"
 license = "MIT"
 
+description = "Easily create error with contexts"
+readme = "README.md"
+repository = "https://github.com/loichyan/thisctx"
+documentation = "https://docs.rs/thisctx"
+
+keywords = ["error"]
+categories = ["rust-patterns"]
+
 [workspace]
 members = ["impl"]
 
 [dependencies]
-thisctx_impl = { path = "impl" }
+thisctx_impl = { version="=0.1.0", path="impl" }
 
 [dev-dependencies]
 thiserror = "1.0"
