@@ -44,7 +44,6 @@ struct Enum {
 }
 
 impl Enum {
-    // TODO: reutrn Punctuated
     fn to_context_def(&self) -> TokenStream {
         TokensWith::new(|tokens| {
             self.body
@@ -186,7 +185,6 @@ impl Variant {
         )
     }
 
-    // TODO: impl from source for enum
     fn to_impl_from_ctx_for_enum(&self, enum_name: &Ident) -> Option<TokenStream> {
         let Self {
             name: variant_name,
@@ -280,6 +278,7 @@ impl VariantBody {
             .ctx
             .as_ref()
             .map(|ctx| ctx.anon_struct.body.map_fields_to_generic(f))
+            .flatten()
     }
 
     fn map_fields<F1, F2>(
@@ -468,7 +467,6 @@ impl StructBody {
             quote!(#ident #colon_token #from.#from_field.into())
         };
 
-    // TODO: return Punctuated
     fn map_fields<F>(&self, f: F) -> WithSurround<TokenStream, StructBodySurround>
     where
         F: FnMut(&GenericField) -> TokenStream,
@@ -488,16 +486,18 @@ impl StructBody {
     const GENERIC_BOUNDED_F: fn(&GenericField) -> TokenStream =
         |GenericField { generic, ty, .. }| quote!(#generic: Into<#ty>);
 
-    fn map_fields_to_generic<F>(&self, f: F) -> WithSurround<TokenStream, AngleBracket>
+    fn map_fields_to_generic<F>(&self, f: F) -> Option<WithSurround<TokenStream, AngleBracket>>
     where
         F: FnMut(&GenericField) -> TokenStream,
     {
+        if let StructBodySurround::None = self.0.surround {
+            return None;
+        }
         let WithSurround { content, .. } = self.map_fields(f);
-        // TODO: no generic for unit struct
-        WithSurround {
+        Some(WithSurround {
             surround: AngleBracket(parse_quote!(<), parse_quote!(>)),
             content,
-        }
+        })
     }
 }
 
