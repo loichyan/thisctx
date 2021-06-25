@@ -3,5 +3,8 @@ Feature:
   ✔ support generic context @started(21-06-16 15:14) @done(21-06-16 23:37) @lasted(8h23m42s)
   
 Refactor:
-  ☐ put parse and expand in two separate modules
+  ✘ put parse and expand in two separate modules @cancelled(21-06-25 16:15)
   ✔ use `WithSurround` to reduce redundant code @started(21-06-17 10:25) @done(21-06-17 22:25) @lasted(12h17s)
+
+Performance:
+  ☐ reduce the use of `TokenStream`

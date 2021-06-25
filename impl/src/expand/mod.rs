@@ -1,12 +1,12 @@
+mod context_field;
+
+use self::context_field::{ContextBody, ContextBodyField, ContextFeildInput, ContextField};
 use crate::utils::{
-    custom_token, AngleBracket, Attributes, Brace, Punctuated, StructBodySurround, TokensWith,
-    WithSurround,
+    AngleBracket, Attributes, Brace, Punctuated, StructBodySurround, TokensWith, WithSurround,
 };
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use std::str::FromStr;
 use syn::parse::{Parse, ParseStream, Result};
-use syn::parse_quote;
 use syn::{token, Ident, Token, Type, Visibility};
 
 mod kw {
@@ -49,6 +49,7 @@ impl Enum {
             self.body
                 .0
                 .content
+                .0
                 .iter()
                 .for_each(|variant| variant.to_context_def(&self.vis).to_tokens(tokens))
         })
@@ -60,6 +61,7 @@ impl Enum {
             self.body
                 .0
                 .content
+                .0
                 .iter()
                 .for_each(|variant| variant.to_impl_into_error(&self.name).to_tokens(tokens))
         })
@@ -68,7 +70,7 @@ impl Enum {
 
     fn to_from_ctx_for_enum(&self) -> TokenStream {
         TokensWith::new(|tokens| {
-            self.body.0.content.iter().for_each(|variant| {
+            self.body.0.content.0.iter().for_each(|variant| {
                 variant
                     .to_impl_from_ctx_for_enum(&self.name)
                     .to_tokens(tokens)
@@ -137,7 +139,7 @@ impl Variant {
     fn to_context_def(&self, vis: &Visibility) -> TokenStream {
         let Self { name, body, .. } = self;
         match body.0.content.ctx.as_ref() {
-            Some(ctx) => ctx.anon_struct.to_struct_def(vis, name),
+            Some(ctx) => ctx.body.to_struct_def(vis, name),
             None => quote!(#vis struct #name;),
         }
     }
@@ -149,8 +151,8 @@ impl Variant {
             ..
         } = self;
         let src_ty = body
-            .get_src_ty()
-            .map(|ty| quote!(#ty))
+            .src()
+            .map(|SourceField { ty, .. }| quote!(#ty))
             .unwrap_or_else(|| quote!(#NONE_ERROR));
         let src_name = quote!(source);
         let expr_struct_body = body.map_fields(
@@ -160,18 +162,18 @@ impl Variant {
             |ContextField {
                  name,
                  colon_token,
-                 anon_struct,
+                 body,
                  ..
              }| {
                 let from = quote!(self);
-                let convert_struct_body = anon_struct
+                let convert_struct_body = body
                     .body
-                    .map_fields(|field| StructBody::STRUCT_BODY_CONVERTED_FROM_F(&from, field));
+                    .map_fields(|field| ContextBody::STRUCT_BODY_CONVERTED_FROM_F(&from, field));
                 quote!(#name #colon_token #variant_name #convert_struct_body)
             },
         );
-        let generic_bounded = body.map_context_fields_to_generic(StructBody::GENERIC_BOUNDED_F);
-        let generic_name = body.map_context_fields_to_generic(StructBody::GENERIC_NAME_F);
+        let generic_bounded = body.map_context_fields_to_generic(ContextBody::GENERIC_BOUNDED_F);
+        let generic_name = body.map_context_fields_to_generic(ContextBody::GENERIC_NAME_F);
         quote!(
             #[allow(unused)]
             impl #generic_bounded #INTO_ERROR for #variant_name #generic_name {
@@ -191,7 +193,7 @@ impl Variant {
             body,
             ..
         } = self;
-        if body.get_src_ty().is_some() {
+        if body.src().is_some() {
             return None;
         }
         let ctx_name = quote!(context);
@@ -200,17 +202,17 @@ impl Variant {
             |ContextField {
                  name,
                  colon_token,
-                 anon_struct,
+                 body,
                  ..
              }| {
-                let convert_struct_body = anon_struct
-                    .body
-                    .map_fields(|field| StructBody::STRUCT_BODY_CONVERTED_FROM_F(&ctx_name, field));
+                let convert_struct_body = body.body.map_fields(|field| {
+                    ContextBody::STRUCT_BODY_CONVERTED_FROM_F(&ctx_name, field)
+                });
                 quote!(#name #colon_token #variant_name #convert_struct_body)
             },
         );
-        let generic_bounded = body.map_context_fields_to_generic(StructBody::GENERIC_BOUNDED_F);
-        let generic_name = body.map_context_fields_to_generic(StructBody::GENERIC_NAME_F);
+        let generic_bounded = body.map_context_fields_to_generic(ContextBody::GENERIC_BOUNDED_F);
+        let generic_name = body.map_context_fields_to_generic(ContextBody::GENERIC_NAME_F);
         let gen = quote!(
             #[allow(unused)]
             impl #generic_bounded From<#variant_name #generic_name> for #enum_name {
@@ -245,11 +247,9 @@ impl ToTokens for Variant {
                  attrs,
                  name,
                  colon_token,
-                 anon_struct,
+                 body,
              }| {
-                let generic = anon_struct
-                    .body
-                    .map_fields_to_generic(StructBody::GENERIC_TY_F);
+                let generic = body.body.map_fields_to_generic(ContextBody::GENERIC_TY_F);
                 quote!(#attrs #name #colon_token #variant_name #generic)
             },
         );
@@ -262,8 +262,12 @@ impl ToTokens for Variant {
 struct VariantBody(WithSurround<VariantFields, StructBodySurround>);
 
 impl VariantBody {
-    fn get_src_ty(&self) -> Option<&Type> {
-        self.0.content.src.as_ref().map(|src| &src.ty)
+    fn src(&self) -> Option<&SourceField> {
+        self.0.content.src.as_ref()
+    }
+
+    fn ctx(&self) -> Option<&ContextField> {
+        self.0.content.ctx.as_ref()
     }
 
     fn map_context_fields_to_generic<F>(
@@ -271,13 +275,10 @@ impl VariantBody {
         f: F,
     ) -> Option<WithSurround<TokenStream, AngleBracket>>
     where
-        F: FnMut(&GenericField) -> TokenStream,
+        F: FnMut(&ContextBodyField) -> TokenStream,
     {
-        self.0
-            .content
-            .ctx
-            .as_ref()
-            .map(|ctx| ctx.anon_struct.body.map_fields_to_generic(f))
+        self.ctx()
+            .map(|ctx| ctx.body.body.map_fields_to_generic(f))
             .flatten()
     }
 
@@ -295,7 +296,7 @@ impl VariantBody {
         let content = src_mapped
             .into_iter()
             .chain(ctx_mapped)
-            .collect::<Punctuated<_, Token![,]>>()
+            .collect::<syn::punctuated::Punctuated<_, Token![,]>>()
             .to_token_stream();
         let surround = self.0.surround;
         WithSurround { content, surround }
@@ -304,10 +305,10 @@ impl VariantBody {
 
 impl Parse for VariantBody {
     fn parse(input: ParseStream) -> Result<Self> {
-        let (surround, content) = StructBodySurround::parse_with(
+        let inner = StructBodySurround::parse_with(
             input,
-            |input| VariantFields::parse(true, input),
-            |input| VariantFields::parse(false, input),
+            |input| VariantFields::parse(input, true),
+            |input| VariantFields::parse(input, false),
             |_| {
                 Ok(VariantFields {
                     src: None,
@@ -315,25 +316,17 @@ impl Parse for VariantBody {
                 })
             },
         )?;
-        Ok(Self(WithSurround { surround, content }))
+        Ok(Self(inner))
     }
 }
 
-// TODO: use Field-Like
 struct VariantFields {
     src: Option<SourceField>,
     ctx: Option<ContextField>,
 }
 
 impl VariantFields {
-    fn parse(named: bool, input: ParseStream) -> Result<Self> {
-        let parse_name_colon_token = || -> Result<(Option<Ident>, Option<Token![:]>)> {
-            match named {
-                true => Ok((Some(input.parse()?), Some(input.parse()?))),
-                false => Ok((None, None)),
-            }
-        };
-
+    fn parse(input: ParseStream, named: bool) -> Result<Self> {
         let mut src = None;
         let mut ctx = None;
         Punctuated::<_, Token![,]>::visit_parse_with(input, |input| {
@@ -345,27 +338,15 @@ impl VariantFields {
                     return Err(input.error("too many sources"));
                 }
                 input.parse::<kw::source>()?;
-                let (name, colon_token) = parse_name_colon_token()?;
-                let ty = input.parse()?;
-                src = Some(SourceField {
-                    attrs,
-                    name,
-                    colon_token,
-                    ty,
-                });
+                let inner = SourceField::parse(input, attrs, named)?;
+                src = Some(inner);
             } else if lookhead.peek(kw::context) {
                 if ctx.is_some() {
                     return Err(input.error("too many contextx"));
                 }
                 input.parse::<kw::context>()?;
-                let (name, colon_token) = parse_name_colon_token()?;
-                let anon_struct = input.parse()?;
-                ctx = Some(ContextField {
-                    attrs,
-                    name,
-                    colon_token,
-                    anon_struct,
-                });
+                let inner = ContextField::from(ContextFeildInput::parse(input, attrs, named)?);
+                ctx = Some(inner);
             } else {
                 return Err(lookhead.error());
             }
@@ -383,6 +364,23 @@ struct SourceField {
     ty: Type,
 }
 
+impl SourceField {
+    fn parse(input: ParseStream, attrs: Attributes, named: bool) -> Result<Self> {
+        let (name, colon_token) = if named {
+            (Some(input.parse()?), Some(input.parse()?))
+        } else {
+            (None, None)
+        };
+        let ty = input.parse()?;
+        Ok(Self {
+            attrs,
+            name,
+            colon_token,
+            ty,
+        })
+    }
+}
+
 impl ToTokens for SourceField {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self {
@@ -395,170 +393,5 @@ impl ToTokens for SourceField {
         name.to_tokens(tokens);
         colon_token.to_tokens(tokens);
         ty.to_tokens(tokens);
-    }
-}
-
-struct ContextField {
-    attrs: Attributes,
-    name: Option<Ident>,
-    colon_token: Option<Token![:]>,
-    anon_struct: AnonStruct,
-}
-
-struct AnonStruct {
-    attrs: Attributes,
-    struct_token: Token![struct],
-    body: StructBody,
-}
-
-impl AnonStruct {
-    fn to_struct_def(&self, vis: &Visibility, name: &Ident) -> TokenStream {
-        let Self {
-            attrs,
-            struct_token,
-            body,
-        } = self;
-        let generic = body.map_fields_to_generic(StructBody::GENERIC_BOUNDED_F);
-        let struct_body = body.map_fields(StructBody::STRUCT_BODY_DEF_F);
-        let semi = match struct_body.surround {
-            StructBodySurround::Brace(..) => None,
-            StructBodySurround::Paren(..) | StructBodySurround::None => Some(quote!(;)),
-        };
-        quote!(#attrs #vis #struct_token #name #generic #struct_body #semi)
-    }
-}
-
-impl Parse for AnonStruct {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let attrs = input.parse()?;
-        let struct_token = input.parse()?;
-        let body = input.parse()?;
-        Ok(Self {
-            attrs,
-            struct_token,
-            body,
-        })
-    }
-}
-
-struct StructBody(WithSurround<GenericFields, StructBodySurround>);
-
-impl StructBody {
-    const STRUCT_BODY_DEF_F: fn(&GenericField) -> TokenStream =
-        |GenericField {
-             generic,
-             attrs,
-             vis,
-             ident,
-             colon_token,
-             ..
-         }| quote!(#attrs #vis #ident #colon_token #generic);
-
-    const STRUCT_BODY_CONVERTED_FROM_F: fn(from: &TokenStream, &GenericField) -> TokenStream =
-        |from,
-         GenericField {
-             ident, colon_token, ..
-         }| {
-            let from_field = match ident {
-                FieldIdent::Some(ident) => quote!(#ident),
-                FieldIdent::None(idx) => TokenStream::from_str(&idx.to_string()).unwrap(),
-            };
-            let from = from.into_token_stream();
-            quote!(#ident #colon_token #from.#from_field.into())
-        };
-
-    fn map_fields<F>(&self, f: F) -> WithSurround<TokenStream, StructBodySurround>
-    where
-        F: FnMut(&GenericField) -> TokenStream,
-    {
-        let content =
-            TokensWith::new(|tokens| self.0.content.0.to_token_stream_with(f).to_tokens(tokens))
-                .into_token_stream();
-        let surround = self.0.surround;
-        WithSurround { content, surround }
-    }
-
-    const GENERIC_TY_F: fn(&GenericField) -> TokenStream = |GenericField { ty, .. }| quote!(#ty);
-
-    const GENERIC_NAME_F: fn(&GenericField) -> TokenStream =
-        |GenericField { generic, .. }| quote!(#generic);
-
-    const GENERIC_BOUNDED_F: fn(&GenericField) -> TokenStream =
-        |GenericField { generic, ty, .. }| quote!(#generic: Into<#ty>);
-
-    fn map_fields_to_generic<F>(&self, f: F) -> Option<WithSurround<TokenStream, AngleBracket>>
-    where
-        F: FnMut(&GenericField) -> TokenStream,
-    {
-        if let StructBodySurround::None = self.0.surround {
-            return None;
-        }
-        let WithSurround { content, .. } = self.map_fields(f);
-        Some(WithSurround {
-            surround: AngleBracket(parse_quote!(<), parse_quote!(>)),
-            content,
-        })
-    }
-}
-
-impl Parse for StructBody {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let (surround, content) = StructBodySurround::parse_with(
-            input,
-            |input| GenericFields::parse(true, input),
-            |input| GenericFields::parse(false, input),
-            |_| Ok(GenericFields(Punctuated::new())),
-        )?;
-        Ok(Self(WithSurround { surround, content }))
-    }
-}
-
-struct GenericFields(Punctuated<GenericField, Token![,]>);
-
-impl GenericFields {
-    fn parse(named: bool, input: ParseStream) -> Result<Self> {
-        let mut idx = 0;
-        Ok(Self(Punctuated::parse_with(input, |input| {
-            let generic = custom_token(&format!("T{}", idx));
-            let attrss = input.parse()?;
-            let vis = input.parse()?;
-            let (ident, colon_token) = match named {
-                true => (FieldIdent::Some(input.parse()?), Some(input.parse()?)),
-                false => (FieldIdent::None(idx), None),
-            };
-            let ty = input.parse()?;
-            idx += 1;
-            Ok(GenericField {
-                generic,
-                attrs: attrss,
-                vis,
-                ident,
-                colon_token,
-                ty,
-            })
-        })?))
-    }
-}
-
-struct GenericField {
-    generic: Type,
-    attrs: Attributes,
-    vis: Visibility,
-    ident: FieldIdent,
-    colon_token: Option<Token![:]>,
-    ty: Type,
-}
-
-enum FieldIdent {
-    Some(Ident),
-    None(usize),
-}
-
-impl ToTokens for FieldIdent {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        match self {
-            Self::Some(ident) => ident.to_tokens(tokens),
-            Self::None(_) => (),
-        }
     }
 }

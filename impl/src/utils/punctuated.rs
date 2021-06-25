@@ -1,18 +1,13 @@
 use super::TokensWith;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
-use std::iter::FromIterator;
 use syn::parse::{Parse, ParseStream, Result};
 
-pub struct Punctuated<T, P>(syn::punctuated::Punctuated<T, P>);
+pub struct Punctuated<T, P>(pub syn::punctuated::Punctuated<T, P>);
 
 impl<T, P> Punctuated<T, P> {
     pub fn new() -> Self {
         Self(syn::punctuated::Punctuated::new())
-    }
-
-    pub fn iter(&self) -> syn::punctuated::Iter<T> {
-        self.0.iter()
     }
 }
 
@@ -81,15 +76,5 @@ impl<T: ToTokens, P: ToTokens> ToTokens for Punctuated<T, P> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         self.to_token_stream_with(T::to_token_stream)
             .to_tokens(tokens)
-    }
-}
-
-impl<T, P: Default> FromIterator<T> for Punctuated<T, P> {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let mut inner = syn::punctuated::Punctuated::new();
-        for item in iter {
-            inner.push(item)
-        }
-        Self(inner)
     }
 }

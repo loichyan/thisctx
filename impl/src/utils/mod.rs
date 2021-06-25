@@ -6,10 +6,10 @@ pub use self::surround::{
     AngleBracket, Brace, Paren, ParseWith, StructBodySurround, Surround, WithSurround,
 };
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{parse_quote, Attribute, Ident};
+use syn::Attribute;
 
 pub struct TokensWith<'a>(Box<dyn 'a + FnOnce(&mut TokenStream)>);
 
@@ -46,13 +46,4 @@ impl ToTokens for Attributes {
         let Self(inner) = self;
         quote!(#(#inner)*).to_tokens(tokens);
     }
-}
-
-pub fn custom_ident(s: &str) -> Ident {
-    Ident::new(s, Span::call_site())
-}
-
-pub fn custom_token<T: Parse>(s: &str) -> T {
-    let ident = custom_ident(s);
-    parse_quote!(#ident)
 }

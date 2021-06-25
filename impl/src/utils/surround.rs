@@ -59,12 +59,22 @@ pub enum StructBodySurround {
 }
 
 impl StructBodySurround {
+    pub fn brace(brace: token::Brace) -> Self {
+        Self::Brace(Brace(brace))
+    }
+
+    pub fn paren(paren: token::Paren) -> Self {
+        Self::Paren(Paren(paren))
+    }
+}
+
+impl StructBodySurround {
     pub fn parse_with<T, F1, F2, F3>(
         input: ParseStream,
         parse_brace: F1,
         parse_paren: F2,
         parse_none: F3,
-    ) -> Result<(Self, T)>
+    ) -> Result<WithSurround<T, Self>>
     where
         F1: FnOnce(ParseStream) -> Result<T>,
         F2: FnOnce(ParseStream) -> Result<T>,
@@ -73,12 +83,16 @@ impl StructBodySurround {
         let lookhead = input.lookahead1();
         if lookhead.peek(token::Brace) {
             let (brace, content) = Brace::parse_with(input, parse_brace)?;
-            Ok((Self::Brace(brace), content))
+            let surround = Self::Brace(brace);
+            Ok(WithSurround { surround, content })
         } else if lookhead.peek(token::Paren) {
             let (paren, content) = Paren::parse_with(input, parse_paren)?;
-            Ok((Self::Paren(paren), content))
+            let surround = Self::Paren(paren);
+            Ok(WithSurround { surround, content })
         } else {
-            Ok((Self::None, parse_none(lookhead)?))
+            let content = parse_none(lookhead)?;
+            let surround = Self::None;
+            Ok(WithSurround { surround, content })
         }
     }
 }
