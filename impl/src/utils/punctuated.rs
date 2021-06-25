@@ -12,7 +12,7 @@ impl<T, P> Punctuated<T, P> {
 }
 
 impl<P: Parse> Punctuated<(), P> {
-    pub fn visit_parse_with<F>(input: ParseStream, mut f: F) -> Result<()>
+    pub fn visit_with<F>(input: ParseStream, mut f: F) -> Result<()>
     where
         F: FnMut(ParseStream) -> Result<()>,
     {

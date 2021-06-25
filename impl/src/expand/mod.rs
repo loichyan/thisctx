@@ -213,7 +213,7 @@ impl Variant {
         );
         let generic_bounded = body.map_context_fields_to_generic(ContextBody::GENERIC_BOUNDED_F);
         let generic_name = body.map_context_fields_to_generic(ContextBody::GENERIC_NAME_F);
-        let gen = quote!(
+        let output = quote!(
             #[allow(unused)]
             impl #generic_bounded From<#variant_name #generic_name> for #enum_name {
                 fn from(#ctx_name: #variant_name #generic_name) -> Self {
@@ -221,7 +221,7 @@ impl Variant {
                 }
             }
         );
-        Some(gen)
+        Some(output)
     }
 }
 
@@ -329,7 +329,7 @@ impl VariantFields {
     fn parse(input: ParseStream, named: bool) -> Result<Self> {
         let mut src = None;
         let mut ctx = None;
-        Punctuated::<_, Token![,]>::visit_parse_with(input, |input| {
+        Punctuated::<_, Token![,]>::visit_with(input, |input| {
             let attrs = input.parse()?;
             input.parse::<Token![@]>()?;
             let lookhead = input.lookahead1();
@@ -352,7 +352,6 @@ impl VariantFields {
             }
             Ok(())
         })?;
-
         Ok(Self { src, ctx })
     }
 }

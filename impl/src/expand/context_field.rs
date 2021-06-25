@@ -3,9 +3,8 @@ use crate::utils::{
 };
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use std::str::FromStr;
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{parse_quote, token, Field, Fields, FieldsNamed, FieldsUnnamed};
+use syn::{parse_quote, token, Field, Fields, FieldsNamed, FieldsUnnamed, Index};
 use syn::{Ident, Token, Type, Visibility};
 
 pub struct ContextFeildInput {
@@ -143,7 +142,7 @@ impl ContextBody {
                         }| {
         let from_field = match ident {
             FieldIdent::Some(ident) => quote!(#ident),
-            FieldIdent::None(idx) => TokenStream::from_str(&idx.to_string()).unwrap(),
+            FieldIdent::None(idx) => quote!(#idx),
         };
         let from = from.into_token_stream();
         quote!(#ident #colon_token #from.#from_field.into())
@@ -231,7 +230,7 @@ impl From<syn::punctuated::Punctuated<Field, Token![,]>> for ContextBodyFields {
                 let attrs = Attributes(attrs);
                 let ident = match ident {
                     Some(ident) => FieldIdent::Some(ident),
-                    None => FieldIdent::None(idx),
+                    None => FieldIdent::None(syn::parse_str(&idx.to_string()).unwrap()),
                 };
                 let field = ContextBodyField {
                     generic,
@@ -262,7 +261,7 @@ pub struct ContextBodyField {
 
 pub enum FieldIdent {
     Some(Ident),
-    None(usize),
+    None(Index),
 }
 
 impl ToTokens for FieldIdent {

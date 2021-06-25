@@ -14,8 +14,7 @@ impl<T, S: ParseWith> WithSurround<T, S> {
     where
         F: FnOnce(ParseStream) -> Result<T>,
     {
-        let (surround, content) = S::parse_with(input, f)?;
-        Ok(Self { surround, content })
+        S::parse_with(input, f)
     }
 }
 
@@ -42,7 +41,7 @@ impl<T: ToTokens, S: Surround> ToTokens for WithSurround<T, S> {
 }
 
 pub trait ParseWith: Sized {
-    fn parse_with<T, F>(input: ParseStream, f: F) -> Result<(Self, T)>
+    fn parse_with<T, F>(input: ParseStream, f: F) -> Result<WithSurround<T, Self>>
     where
         F: FnOnce(ParseStream) -> Result<T>;
 }
@@ -82,12 +81,12 @@ impl StructBodySurround {
     {
         let lookhead = input.lookahead1();
         if lookhead.peek(token::Brace) {
-            let (brace, content) = Brace::parse_with(input, parse_brace)?;
-            let surround = Self::Brace(brace);
+            let WithSurround { surround, content } = Brace::parse_with(input, parse_brace)?;
+            let surround = Self::Brace(surround);
             Ok(WithSurround { surround, content })
         } else if lookhead.peek(token::Paren) {
-            let (paren, content) = Paren::parse_with(input, parse_paren)?;
-            let surround = Self::Paren(paren);
+            let WithSurround { surround, content } = Paren::parse_with(input, parse_paren)?;
+            let surround = Self::Paren(surround);
             Ok(WithSurround { surround, content })
         } else {
             let content = parse_none(lookhead)?;
@@ -111,13 +110,13 @@ impl Surround for StructBodySurround {
 pub struct Brace(pub token::Brace);
 
 impl ParseWith for Brace {
-    fn parse_with<T, F>(input: ParseStream, f: F) -> Result<(Self, T)>
+    fn parse_with<T, F>(input: ParseStream, f: F) -> Result<WithSurround<T, Self>>
     where
         F: FnOnce(ParseStream) -> Result<T>,
     {
         let content;
-        let brace = braced!(content in input);
-        f(&content).map(|t| (Self(brace), t))
+        let surround = Self(braced!(content in input));
+        f(&content).map(|content| WithSurround { surround, content })
     }
 }
 
@@ -132,13 +131,13 @@ impl Surround for Brace {
 pub struct Paren(pub token::Paren);
 
 impl ParseWith for Paren {
-    fn parse_with<T, F>(input: ParseStream, f: F) -> Result<(Self, T)>
+    fn parse_with<T, F>(input: ParseStream, f: F) -> Result<WithSurround<T, Self>>
     where
         F: FnOnce(ParseStream) -> Result<T>,
     {
         let content;
-        let paren = parenthesized!(content in input);
-        f(&content).map(|t| (Self(paren), t))
+        let surround = Self(parenthesized!(content in input));
+        f(&content).map(|content| WithSurround { surround, content })
     }
 }
 
@@ -153,14 +152,15 @@ impl Surround for Paren {
 pub struct AngleBracket(pub Token![<], pub Token![>]);
 
 impl ParseWith for AngleBracket {
-    fn parse_with<T, F>(input: ParseStream, f: F) -> Result<(Self, T)>
+    fn parse_with<T, F>(input: ParseStream, f: F) -> Result<WithSurround<T, Self>>
     where
         F: FnOnce(ParseStream) -> Result<T>,
     {
         let lt = input.parse::<Token![<]>()?;
-        let t = f(input)?;
+        let content = f(input)?;
         let gt = input.parse::<Token![>]>()?;
-        Ok((Self(lt, gt), t))
+        let surround = Self(lt, gt);
+        Ok(WithSurround { surround, content })
     }
 }
 
