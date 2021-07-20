@@ -248,12 +248,18 @@ impl Variant {
             .body
             .body
             .map_fields_to_generic(ContextBody::GENERIC_NAME_F);
-        let build_doc = format!(r"Convert [`Self`] into [`{}`].", enum_name);
+        let build_doc = format!(r"Convert into `{}`.", enum_name);
+        let fail_doc = format!(r"Convert into `Result<{}, T>`.", enum_name);
         quote!(
             impl #generic_bounded #variant_name #generic_name {
                 #[doc = #build_doc]
                 pub fn build(self) -> #enum_name {
                     #enum_name::#variant_name #expr_struct_body
+                }
+
+                #[doc = #fail_doc]
+                pub fn fail<T>(self) -> std::result::Result<T, #enum_name> {
+                    Err(self.build())
                 }
             }
 
