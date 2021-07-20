@@ -1,9 +1,7 @@
 mod context_field;
 
-use self::context_field::{ContextBody, ContextBodyField, ContextFeildInput, ContextField};
-use crate::utils::{
-    AngleBracket, Attributes, Brace, Punctuated, StructBodySurround, TokensWith, WithSurround,
-};
+use self::context_field::{ContextBody, ContextFeildInput, ContextField};
+use crate::utils::{Attributes, Brace, Punctuated, StructBodySurround, TokensWith, WithSurround};
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
@@ -70,11 +68,12 @@ impl Enum {
 
     fn to_from_ctx_for_enum(&self) -> TokenStream {
         TokensWith::new(|tokens| {
-            self.body.0.content.0.iter().for_each(|variant| {
-                variant
-                    .to_impl_from_ctx_for_enum(&self.name)
-                    .to_tokens(tokens)
-            })
+            self.body
+                .0
+                .content
+                .0
+                .iter()
+                .for_each(|variant| variant.to_impl_from_for_enum(&self.name).to_tokens(tokens))
         })
         .into_token_stream()
     }
@@ -147,9 +146,10 @@ impl Variant {
             body,
             ..
         } = self;
-        if body.ctx().is_none() {
-            return None;
-        }
+        let ctx_field = match body.ctx() {
+            None => return None,
+            Some(ctx) => ctx,
+        };
         let src_ty = body
             .src()
             .map(|SourceField { ty, .. }| quote!(#ty))
@@ -172,8 +172,14 @@ impl Variant {
                 quote!(#name #colon_token #variant_name #convert_struct_body)
             },
         );
-        let generic_bounded = body.map_context_fields_to_generic(ContextBody::GENERIC_BOUNDED_F);
-        let generic_name = body.map_context_fields_to_generic(ContextBody::GENERIC_NAME_F);
+        let generic_bounded = ctx_field
+            .body
+            .body
+            .map_fields_to_generic(ContextBody::GENERIC_BOUNDED_F);
+        let generic_name = ctx_field
+            .body
+            .body
+            .map_fields_to_generic(ContextBody::GENERIC_NAME_F);
         let expanded = quote!(
             #[allow(unused)]
             impl #generic_bounded #INTO_ERROR for #variant_name #generic_name {
@@ -188,16 +194,50 @@ impl Variant {
         Some(expanded)
     }
 
-    fn to_impl_from_ctx_for_enum(&self, enum_name: &Ident) -> Option<TokenStream> {
+    fn to_impl_from_for_enum(&self, enum_name: &Ident) -> Option<TokenStream> {
+        match (self.body.ctx(), self.body.src()) {
+            (None, None) => None,
+            (Some(..), Some(..)) => None,
+            (Some(ctx), None) => Some(self.to_impl_from_ctx_for_enum(ctx, enum_name)),
+            (None, Some(src)) => Some(self.to_impl_from_src_for_enum(src, enum_name)),
+        }
+    }
+
+    fn to_impl_from_src_for_enum(&self, src_field: &SourceField, enum_name: &Ident) -> TokenStream {
         let Self {
             name: variant_name,
             body,
             ..
         } = self;
-        if body.src().is_some() || body.ctx().is_none() {
-            return None;
-        }
-        let ctx_name = quote!(context);
+        let src_var = quote!(source);
+        let expr_struct_body = body.map_fields(
+            |SourceField {
+                 name, colon_token, ..
+             }| quote!(#name #colon_token #src_var),
+            |_| unreachable!("{} shouldn't have context field", variant_name),
+        );
+        let SourceField { ty: src_ty, .. } = src_field;
+        quote!(
+            #[allow(unused)]
+            impl From<#src_ty> for #enum_name {
+                fn from(#src_var: #src_ty) -> Self {
+                    Self::#variant_name #expr_struct_body
+                }
+            }
+        )
+    }
+
+    fn to_impl_from_ctx_for_enum(
+        &self,
+        ctx_field: &ContextField,
+        enum_name: &Ident,
+    ) -> TokenStream {
+        let Self {
+            name: variant_name,
+            body,
+            ..
+        } = self;
+        let ctx_var = quote!(context);
         let expr_struct_body = body.map_fields(
             |_| unreachable!("{} shouldn't have source field", variant_name),
             |ContextField {
@@ -206,23 +246,28 @@ impl Variant {
                  body,
                  ..
              }| {
-                let convert_struct_body = body.body.map_fields(|field| {
-                    ContextBody::STRUCT_BODY_CONVERTED_FROM_F(&ctx_name, field)
-                });
+                let convert_struct_body = body
+                    .body
+                    .map_fields(|field| ContextBody::STRUCT_BODY_CONVERTED_FROM_F(&ctx_var, field));
                 quote!(#name #colon_token #variant_name #convert_struct_body)
             },
         );
-        let generic_bounded = body.map_context_fields_to_generic(ContextBody::GENERIC_BOUNDED_F);
-        let generic_name = body.map_context_fields_to_generic(ContextBody::GENERIC_NAME_F);
-        let output = quote!(
+        let generic_bounded = ctx_field
+            .body
+            .body
+            .map_fields_to_generic(ContextBody::GENERIC_BOUNDED_F);
+        let generic_name = ctx_field
+            .body
+            .body
+            .map_fields_to_generic(ContextBody::GENERIC_NAME_F);
+        quote!(
             #[allow(unused)]
             impl #generic_bounded From<#variant_name #generic_name> for #enum_name {
-                fn from(#ctx_name: #variant_name #generic_name) -> Self {
+                fn from(#ctx_var: #variant_name #generic_name) -> Self {
                     Self::#variant_name #expr_struct_body
                 }
             }
-        );
-        Some(output)
+        )
     }
 }
 
@@ -269,18 +314,6 @@ impl VariantBody {
 
     fn ctx(&self) -> Option<&ContextField> {
         self.0.content.ctx.as_ref()
-    }
-
-    fn map_context_fields_to_generic<F>(
-        &self,
-        f: F,
-    ) -> Option<WithSurround<TokenStream, AngleBracket>>
-    where
-        F: FnMut(&ContextBodyField) -> TokenStream,
-    {
-        self.ctx()
-            .map(|ctx| ctx.body.body.map_fields_to_generic(f))
-            .flatten()
     }
 
     fn map_fields<F1, F2>(
