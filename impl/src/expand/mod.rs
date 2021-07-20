@@ -143,11 +143,11 @@ impl Variant {
             .src()
             .map(|SourceField { ty, .. }| quote!(#ty))
             .unwrap_or_else(|| quote!(#NONE_ERROR));
-        let src_name = quote!(source);
+        let src_var = quote!(source);
         let expr_struct_body = body.map_fields(
             |SourceField {
                  name, colon_token, ..
-             }| quote!(#name #colon_token #src_name),
+             }| quote!(#name #colon_token #src_var),
             |ContextField {
                  name,
                  colon_token,
@@ -175,7 +175,7 @@ impl Variant {
                 type Error = #enum_name;
                 type Source = #src_ty;
 
-                fn into_error(self, #src_name: Self::Source) -> Self::Error {
+                fn into_error(self, #src_var: Self::Source) -> Self::Error {
                     Self::Error::#variant_name #expr_struct_body
                 }
             }
@@ -226,7 +226,6 @@ impl Variant {
             body,
             ..
         } = self;
-        let ctx_var = quote!(context);
         let expr_struct_body = body.map_fields(
             |_| unreachable!("{} shouldn't have source field", variant_name),
             |ContextField {
@@ -235,9 +234,9 @@ impl Variant {
                  body,
                  ..
              }| {
-                let convert_struct_body = body
-                    .body
-                    .map_fields(|field| ContextBody::STRUCT_BODY_CONVERTED_FROM_F(&ctx_var, field));
+                let convert_struct_body = body.body.map_fields(|field| {
+                    ContextBody::STRUCT_BODY_CONVERTED_FROM_F(&quote!(self), field)
+                });
                 quote!(#name #colon_token #variant_name #convert_struct_body)
             },
         );
@@ -249,11 +248,19 @@ impl Variant {
             .body
             .body
             .map_fields_to_generic(ContextBody::GENERIC_NAME_F);
+        let build_doc = format!(r"Convert [`Self`] into [`{}`].", enum_name);
         quote!(
+            impl #generic_bounded #variant_name #generic_name {
+                #[doc = #build_doc]
+                pub fn build(self) -> #enum_name {
+                    #enum_name::#variant_name #expr_struct_body
+                }
+            }
+
             #[allow(unused)]
             impl #generic_bounded From<#variant_name #generic_name> for #enum_name {
-                fn from(#ctx_var: #variant_name #generic_name) -> Self {
-                    Self::#variant_name #expr_struct_body
+                fn from(t: #variant_name #generic_name) -> Self {
+                    #variant_name::build(t)
                 }
             }
         )
