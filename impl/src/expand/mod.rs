@@ -42,40 +42,29 @@ struct Enum {
 }
 
 impl Enum {
-    fn to_context_def(&self) -> TokenStream {
+    fn map_variants<T: ToTokens, F: FnMut(&Variant) -> T>(&self, f: F) -> TokenStream {
+        let mut f = f;
         TokensWith::new(|tokens| {
             self.body
                 .0
                 .content
                 .0
                 .iter()
-                .for_each(|variant| variant.to_context_def(&self.vis).to_tokens(tokens))
+                .for_each(|variant| f(variant).to_tokens(tokens))
         })
         .into_token_stream()
+    }
+
+    fn to_context_def(&self) -> TokenStream {
+        self.map_variants(|variant| variant.to_context_def(&self.vis))
     }
 
     fn to_impl_into_error(&self) -> TokenStream {
-        TokensWith::new(|tokens| {
-            self.body
-                .0
-                .content
-                .0
-                .iter()
-                .for_each(|variant| variant.to_impl_into_error(&self.name).to_tokens(tokens))
-        })
-        .into_token_stream()
+        self.map_variants(|variant| variant.to_impl_into_error(&self.name))
     }
 
     fn to_from_ctx_for_enum(&self) -> TokenStream {
-        TokensWith::new(|tokens| {
-            self.body
-                .0
-                .content
-                .0
-                .iter()
-                .for_each(|variant| variant.to_impl_from_for_enum(&self.name).to_tokens(tokens))
-        })
-        .into_token_stream()
+        self.map_variants(|variant| variant.to_impl_from_for_enum(&self.name))
     }
 }
 
