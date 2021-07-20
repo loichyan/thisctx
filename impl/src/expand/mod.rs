@@ -136,20 +136,20 @@ struct Variant {
 }
 
 impl Variant {
-    fn to_context_def(&self, vis: &Visibility) -> TokenStream {
+    fn to_context_def(&self, vis: &Visibility) -> Option<TokenStream> {
         let Self { name, body, .. } = self;
-        match body.0.content.ctx.as_ref() {
-            Some(ctx) => ctx.body.to_struct_def(vis, name),
-            None => quote!(#vis struct #name;),
-        }
+        body.ctx().map(|ctx| ctx.body.to_struct_def(vis, name))
     }
 
-    fn to_impl_into_error(&self, enum_name: &Ident) -> TokenStream {
+    fn to_impl_into_error(&self, enum_name: &Ident) -> Option<TokenStream> {
         let Self {
             name: variant_name,
             body,
             ..
         } = self;
+        if body.ctx().is_none() {
+            return None;
+        }
         let src_ty = body
             .src()
             .map(|SourceField { ty, .. }| quote!(#ty))
@@ -174,7 +174,7 @@ impl Variant {
         );
         let generic_bounded = body.map_context_fields_to_generic(ContextBody::GENERIC_BOUNDED_F);
         let generic_name = body.map_context_fields_to_generic(ContextBody::GENERIC_NAME_F);
-        quote!(
+        let expanded = quote!(
             #[allow(unused)]
             impl #generic_bounded #INTO_ERROR for #variant_name #generic_name {
                 type Error = #enum_name;
@@ -184,7 +184,8 @@ impl Variant {
                     Self::Error::#variant_name #expr_struct_body
                 }
             }
-        )
+        );
+        Some(expanded)
     }
 
     fn to_impl_from_ctx_for_enum(&self, enum_name: &Ident) -> Option<TokenStream> {
@@ -193,7 +194,7 @@ impl Variant {
             body,
             ..
         } = self;
-        if body.src().is_some() {
+        if body.src().is_some() || body.ctx().is_none() {
             return None;
         }
         let ctx_name = quote!(context);
