@@ -222,24 +222,8 @@ impl Variant {
         enum_name: &Ident,
     ) -> TokenStream {
         let Self {
-            name: variant_name,
-            body,
-            ..
+            name: variant_name, ..
         } = self;
-        let expr_struct_body = body.map_fields(
-            |_| unreachable!("{} shouldn't have source field", variant_name),
-            |ContextField {
-                 name,
-                 colon_token,
-                 body,
-                 ..
-             }| {
-                let convert_struct_body = body.body.map_fields(|field| {
-                    ContextBody::STRUCT_BODY_CONVERTED_FROM_F(&quote!(self), field)
-                });
-                quote!(#name #colon_token #variant_name #convert_struct_body)
-            },
-        );
         let generic_bounded = ctx_field
             .body
             .body
@@ -254,7 +238,7 @@ impl Variant {
             impl #generic_bounded #variant_name #generic_name {
                 #[doc = #build_doc]
                 pub fn build(self) -> #enum_name {
-                    #enum_name::#variant_name #expr_struct_body
+                    #INTO_ERROR::into_error(self, #NONE_ERROR)
                 }
 
                 #[doc = #fail_doc]
