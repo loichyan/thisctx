@@ -3,7 +3,7 @@ name = "thisctx"
 version = "0.1.0"
 authors = ["loichyan <loichyan@foxmail.com>"]
 edition = "2018"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 description = "Easily create error with contexts"
 readme = "README.md"

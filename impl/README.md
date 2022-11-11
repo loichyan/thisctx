@@ -1,3 +1,3 @@
-# THISCTX-IMPL
+# thisctx-impl
 
 Macro implementation of the [thisctx](https://crates.io/crates/thisctx) crate.
