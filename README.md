@@ -1,4 +1,4 @@
-# thisctx
+# 🎈 thisctx
 
 A simple crate work with [thiserror](https://crates.io/crates/thiserror) to
 create errors with contexts, inspired by
@@ -35,7 +35,7 @@ fn load_config(path: &Path) -> Result<String, Error> {
 
 ## 📝 Todo
 
-- [ ] Switch to Rust 2021.
+- [x] Switch to Rust 2021.
 - [ ] Use derive macro instead.
 
 ## ⚖️ License

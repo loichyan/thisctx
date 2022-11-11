@@ -1,8 +1,11 @@
+[workspace]
+members = ["impl"]
+
 [package]
 name = "thisctx"
 version = "0.1.0"
 authors = ["loichyan <loichyan@foxmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT OR Apache-2.0"
 
 description = "Easily create error with contexts"
@@ -13,11 +16,8 @@ documentation = "https://docs.rs/thisctx"
 keywords = ["error"]
 categories = ["rust-patterns"]
 
-[workspace]
-members = ["impl"]
-
 [dependencies]
-thisctx_impl = { version="=0.1.0", path="impl" }
+thisctx_impl = { path = "impl" }
 
 [dev-dependencies]
 thiserror = "1.0"
