@@ -7,36 +7,29 @@ create errors with contexts, inspired by
 ## ✍️ Examples
 
 ```rust
-use std::fs;
 use std::path::{Path, PathBuf};
-use thisctx::{thisctx, ResultExt};
+use thisctx::WithContext;
 use thiserror::Error;
 
-thisctx! {
-    #[derive(Debug, Error)]
-    pub enum Error {
-        #[error("I/O failed '{}': {src}", .ctx.0.display())]
-        IoFaild {
-            #[source]
-            @source
-            src: std::io::Error,
-            @context
-            ctx:
-                #[derive(Debug)]
-                struct (PathBuf),
-        },
-    }
+#[derive(Debug, Error, WithContext)]
+pub enum Error {
+    #[error("I/O failed '{}': {source}", .path.display())]
+    IoFaild {
+        source: std::io::Error,
+        path: PathBuf,
+    },
 }
 
 fn load_config(path: &Path) -> Result<String, Error> {
-    fs::read_to_string(path).context(IoFaild(path))
+    std::fs::read_to_string(path).context(IoFaildContext { path })
 }
 ```
 
 ## 📝 Todo
 
 - [x] Switch to Rust 2021.
-- [ ] Use derive macro instead.
+- [x] Use derive macro instead.
+- [ ] Support generics.
 
 ## ⚖️ License
 

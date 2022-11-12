@@ -1,16 +1,16 @@
 //! Macro implementation of the [thisctx](https://crates.io/crates/thisctx) crate.
 
+mod ast;
+mod attr;
 mod expand;
-mod shared;
-mod utils;
 
 use proc_macro::TokenStream;
-use quote::ToTokens;
-use syn::parse_macro_input;
+use syn::{parse_macro_input, DeriveInput};
 
-#[proc_macro]
-pub fn thisctx(tokens: TokenStream) -> TokenStream {
-    parse_macro_input!(tokens as expand::ThisCtx)
-        .to_token_stream()
+#[proc_macro_derive(WithContext, attributes(source))]
+pub fn derive_with_context(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    expand::derive(&input)
+        .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }

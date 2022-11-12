@@ -1,5 +1,5 @@
 [workspace]
-members = ["impl"]
+members = ["impl", "tests/basic.rs"]
 
 [package]
 name = "thisctx"
