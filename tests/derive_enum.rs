@@ -53,9 +53,9 @@ fn with_context() {
         context_2: 0,
     })
     .unwrap();
-    true.context(EmptyNamedContext {}).unwrap();
+    true.context(EmptyNamedContext).unwrap();
     ok().context(UnnamedWithSourceContext("", 0)).unwrap();
     true.context(UnnamedWithoutSourceContext("", 0)).unwrap();
-    true.context(EmptyUnnamedContext()).unwrap();
+    true.context(EmptyUnnamedContext).unwrap();
     true.context(UnitContext).unwrap();
 }

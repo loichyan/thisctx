@@ -12,5 +12,5 @@ fn requires_error(_: Error) {}
 fn into_error() {
     requires_error(ErrorFromContextContext("").into());
     requires_error(ErrorFromContextContext("").into_error(()));
-    requires_error(IntoErrorContext().into_error("".to_owned()));
+    requires_error(IntoErrorContext.into_error("".to_owned()));
 }

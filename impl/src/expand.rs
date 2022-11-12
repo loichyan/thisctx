@@ -17,19 +17,21 @@ pub fn derive(node: &DeriveInput) -> Result<TokenStream> {
 }
 
 pub fn impl_struct(input: Struct) -> TokenStream {
+    macro_rules! attr {
+        ($ident:ident) => {{
+            input.attrs.thisctx.$ident.as_ref()
+        }};
+    }
+
     let error = &input.original.ident;
     Context {
         error,
-        vis: input
-            .attrs
-            .thisctx
-            .vis
-            .as_ref()
-            .unwrap_or(&input.original.vis),
+        vis: attr!(visibility).unwrap_or(&input.original.vis),
         ident: error,
-        suffix: input.attrs.thisctx.suffix.as_ref(),
+        suffix: attr!(suffix),
         fields: &input.fields,
         original_fields: &input.data.fields,
+        unit: attr!(unit).copied(),
     }
     .impl_into_error(quote!(#error))
 }
@@ -44,26 +46,27 @@ pub fn impl_enum(input: Enum) -> TokenStream {
 
 impl<'a> Enum<'a> {
     fn impl_variant(&self, input: &Variant) -> TokenStream {
+        macro_rules! attr {
+            ($ident:ident) => {{
+                input
+                    .attrs
+                    .thisctx
+                    .$ident
+                    .as_ref()
+                    .or(self.attrs.thisctx.$ident.as_ref())
+            }};
+        }
+
         let error = &self.original.ident;
         let ident = &input.original.ident;
         Context {
             error,
-            vis: input
-                .attrs
-                .thisctx
-                .vis
-                .as_ref()
-                .or(self.attrs.thisctx.vis.as_ref())
-                .unwrap_or(&self.original.vis),
+            vis: attr!(visibility).unwrap_or(&self.original.vis),
             ident,
-            suffix: input
-                .attrs
-                .thisctx
-                .suffix
-                .as_ref()
-                .or(self.attrs.thisctx.suffix.as_ref()),
+            suffix: attr!(suffix),
             fields: &input.fields,
             original_fields: &input.original.fields,
+            unit: attr!(unit).copied(),
         }
         .impl_into_error(quote!(#error::#ident))
     }
@@ -76,6 +79,7 @@ struct Context<'a> {
     suffix: Option<&'a Suffix>,
     fields: &'a [Field<'a>],
     original_fields: &'a Fields,
+    unit: Option<bool>,
 }
 
 impl<'a> Context<'a> {
@@ -95,7 +99,7 @@ impl<'a> Context<'a> {
                 }
             } else {
                 let generic = format_ident!("T{index}");
-                let field_vis = field.attrs.thisctx.vis.as_ref().unwrap_or(self.vis);
+                let field_vis = field.attrs.thisctx.visibility.as_ref().unwrap_or(self.vis);
                 if let Some(ident) = &field.original.ident {
                     context_struct_fields.push(quote!(#field_vis #ident: #generic));
                     expr_struct_fields.push(quote!(#ident: self.#ident.into()));
@@ -113,13 +117,22 @@ impl<'a> Context<'a> {
         }
         let context_struct_body;
         let expr_struct_body;
+        let context_unit_body = index == 0 && !matches!(self.unit, Some(false));
         match self.original_fields {
             Fields::Named(_) => {
-                context_struct_body = quote!({ #context_struct_fields });
+                context_struct_body = if context_unit_body {
+                    quote!(;)
+                } else {
+                    quote!({ #context_struct_fields })
+                };
                 expr_struct_body = quote!({ #expr_struct_fields });
             }
             Fields::Unnamed(_) => {
-                context_struct_body = quote!(( #context_struct_fields ););
+                context_struct_body = if context_unit_body {
+                    quote!(;)
+                } else {
+                    quote!(( #context_struct_fields );)
+                };
                 expr_struct_body = quote!(( #expr_struct_fields ));
             }
             Fields::Unit => {
@@ -130,7 +143,7 @@ impl<'a> Context<'a> {
 
         let context_vis = self.vis;
         let context_ty = match self.suffix {
-            Some(Suffix::Flag(flag)) if !flag.value => self.ident.clone(),
+            Some(Suffix::Flag(flag)) if !flag => self.ident.clone(),
             Some(Suffix::Ident(suff)) => {
                 format_ident!("{}{}", self.ident, suff, span = self.ident.span())
             }
