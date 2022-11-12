@@ -3,6 +3,7 @@ members = [
     "impl",
     "tests/derive_enum.rs",
     "tests/derive_struct.rs",
+    "tests/extra_traits.rs",
     "tests/suffix.rs",
     "tests/visibility.rs",
 ]
