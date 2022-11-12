@@ -3,7 +3,7 @@ use crate::{
     attr::Suffix,
 };
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use syn::{punctuated::Punctuated, DeriveInput, Fields, Ident, Member, Result, Token, Visibility};
 
 const DEFAULT_SUFFIX: &str = "Context";
@@ -127,15 +127,7 @@ impl<'a> Context<'a> {
                 expr_struct_body = quote!();
             }
         }
-        let source_field = self.fields.iter().find(|field| field.is_source());
-        let source_ty = source_field
-            .map(
-                |Field {
-                     original: syn::Field { ty, .. },
-                     ..
-                 }| quote!(#ty),
-            )
-            .unwrap_or_else(|| quote!(()));
+
         let context_vis = self.vis;
         let context_ty = match self.suffix {
             Some(Suffix::Flag(flag)) if !flag.value => self.ident.clone(),
@@ -144,11 +136,32 @@ impl<'a> Context<'a> {
             }
             _ => format_ident!("{}{}", self.ident, DEFAULT_SUFFIX, span = self.ident.span()),
         };
+
         let error_ty = self.error;
+        let source_field = self.fields.iter().find(|field| field.is_source());
+        let source_ty;
+        let impl_from_context_for_error;
+        if let Some(field) = source_field {
+            source_ty = field.original.ty.to_token_stream();
+            impl_from_context_for_error = None;
+        } else {
+            source_ty = quote!(());
+            impl_from_context_for_error = Some(quote!(
+                impl<#context_generics> From<#context_ty<#context_generics>> for #error_ty
+                where #context_generic_bounds
+                {
+                    #[inline]
+                    fn from(context: #context_ty<#context_generics>) -> Self {
+                        context.into_error(())
+                    }
+                }
+            ));
+        }
+
         quote!(
             #context_vis struct #context_ty<#context_generic_defaults> #context_struct_body
 
-            impl<#context_generics> thisctx::IntoError for #context_ty <#context_generics>
+            impl<#context_generics> thisctx::IntoError for #context_ty<#context_generics>
             where #context_generic_bounds
             {
                 type Error = #error_ty;
@@ -159,6 +172,17 @@ impl<'a> Context<'a> {
                     #expr_struct #expr_struct_body
                 }
             }
+
+            impl<#context_generics> #context_ty<#context_generics>
+            where #context_generic_bounds
+            {
+                #[inline]
+                fn into_error(self, source: #source_ty) -> #error_ty {
+                    <Self as thisctx::IntoError>::into_error(self, source)
+                }
+            }
+
+            #impl_from_context_for_error
         )
     }
 }
