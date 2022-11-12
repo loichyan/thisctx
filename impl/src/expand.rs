@@ -95,12 +95,13 @@ impl<'a> Context<'a> {
                 }
             } else {
                 let generic = format_ident!("T{index}");
+                let field_vis = field.attrs.thisctx.vis.as_ref().unwrap_or(self.vis);
                 if let Some(ident) = &field.original.ident {
-                    context_struct_fields.push(quote!(#ident: #generic));
+                    context_struct_fields.push(quote!(#field_vis #ident: #generic));
                     expr_struct_fields.push(quote!(#ident: self.#ident.into()));
                 } else {
                     let member = Member::Unnamed(index.into());
-                    context_struct_fields.push(quote!(#generic));
+                    context_struct_fields.push(quote!(#field_vis #generic));
                     expr_struct_fields.push(quote!(self.#member.into()));
                 }
                 let field_ty = &field.original.ty;

@@ -11,7 +11,7 @@ enum Error {
 }
 
 #[test]
-fn use_context() {
+fn with_context() {
     true.context(DefaultSuffixContext).unwrap();
     true.context(NoSuffix).unwrap();
     true.context(CustomSuffixThisctx).unwrap();
