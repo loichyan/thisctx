@@ -4,7 +4,7 @@ use thiserror::Error;
 type BoxError = Box<dyn std::error::Error>;
 
 #[derive(Debug, Error, WithContext)]
-enum ErrorEnum {
+pub enum ErrorEnum {
     #[error("{context_1}{source}{context_2}")]
     NamedWithSource {
         context_1: String,
@@ -37,7 +37,7 @@ enum ErrorEnum {
 
 #[derive(Debug, Error, WithContext)]
 #[error("{context_1}{source}{context_2}")]
-struct ErrorStruct {
+pub struct ErrorStruct {
     context_1: String,
     source: BoxError,
     context_2: String,
