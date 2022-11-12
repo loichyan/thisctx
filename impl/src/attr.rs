@@ -1,13 +1,14 @@
 use syn::{
     parenthesized,
-    parse::{Nothing, ParseStream},
-    token, Attribute, Error, Result, Token, Visibility,
+    parse::{Nothing, Parse, ParseStream},
+    token, Attribute, Error, Ident, LitBool, Result, Token, Visibility,
 };
 
 mod kw {
     use syn::custom_keyword;
 
     custom_keyword!(visibility);
+    custom_keyword!(suffix);
 }
 
 #[derive(Default)]
@@ -20,6 +21,25 @@ pub struct Attrs<'a> {
 #[derive(Default)]
 pub struct Thisctx {
     pub vis: Option<Visibility>,
+    pub suffix: Option<Suffix>,
+}
+
+pub enum Suffix {
+    Flag(LitBool),
+    Ident(Ident),
+}
+
+impl Parse for Suffix {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let lookhead = input.lookahead1();
+        if lookhead.peek(LitBool) {
+            input.parse().map(Suffix::Flag)
+        } else if lookhead.peek(Ident) {
+            input.parse().map(Suffix::Ident)
+        } else {
+            Err(lookhead.error())
+        }
+    }
 }
 
 pub fn get(input: &[Attribute]) -> Result<Attrs> {
@@ -60,11 +80,16 @@ fn parse_thisctx_attribute(attrs: &mut Thisctx, attr: &Attribute) -> Result<()> 
                         "duplicate #[thisctx(visibility)] attribute",
                     ));
                 }
-                if input.peek(token::Paren) {
-                    let content;
-                    parenthesized!(content in input);
-                    attrs.vis = Some(content.parse()?);
+                attrs.vis = parse_thisctx_arg(input)?;
+            } else if lookhead.peek(kw::suffix) {
+                let kw = input.parse::<kw::suffix>()?;
+                if attrs.vis.is_some() {
+                    return Err(Error::new_spanned(
+                        kw,
+                        "duplicate #[thisctx(suffix)] attribute",
+                    ));
                 }
+                attrs.suffix = parse_thisctx_arg(input)?;
             } else {
                 return Err(lookhead.error());
             }
@@ -74,5 +99,15 @@ fn parse_thisctx_attribute(attrs: &mut Thisctx, attr: &Attribute) -> Result<()> 
             input.parse::<Token![,]>()?;
         }
         Ok(())
+    })
+}
+
+fn parse_thisctx_arg<T: Parse>(input: ParseStream) -> Result<Option<T>> {
+    Ok(if input.peek(token::Paren) {
+        let content;
+        parenthesized!(content in input);
+        Some(content.parse()?)
+    } else {
+        None
     })
 }
