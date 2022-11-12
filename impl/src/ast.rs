@@ -60,7 +60,7 @@ impl<'a> Enum<'a> {
         let variants = data
             .variants
             .iter()
-            .map(|node| Variant::from_syn(node))
+            .map(Variant::from_syn)
             .collect::<Result<_>>()?;
         Ok(Enum {
             original: node,
@@ -86,7 +86,7 @@ impl<'a> Field<'a> {
     fn from_syn_many(fields: &'a Fields) -> Result<Vec<Self>> {
         let mut fields = fields
             .iter()
-            .map(|field| Field::from_syn(field))
+            .map(Field::from_syn)
             .collect::<Result<Vec<_>>>()?;
         find_source_field(&mut fields);
         Ok(fields)

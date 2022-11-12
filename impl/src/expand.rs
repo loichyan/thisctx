@@ -17,7 +17,12 @@ pub fn impl_struct(input: Struct) -> TokenStream {
     let error = &input.original.ident;
     Context {
         error,
-        vis: &input.original.vis,
+        vis: input
+            .attrs
+            .thisctx
+            .vis
+            .as_ref()
+            .unwrap_or(&input.original.vis),
         ident: error,
         fields: &input.fields,
         original_fields: &input.data.fields,
@@ -39,7 +44,13 @@ impl<'a> Enum<'a> {
         let ident = &input.original.ident;
         Context {
             error,
-            vis: &self.original.vis,
+            vis: input
+                .attrs
+                .thisctx
+                .vis
+                .as_ref()
+                .or(self.attrs.thisctx.vis.as_ref())
+                .unwrap_or(&self.original.vis),
             ident,
             fields: &input.fields,
             original_fields: &input.original.fields,
