@@ -1,5 +1,11 @@
 [workspace]
-members = ["impl", "tests/basic.rs"]
+members = [
+    "impl",
+    "tests/derive_enum.rs",
+    "tests/derive_struct.rs",
+    "tests/suffix.rs",
+    "tests/visibility.rs",
+]
 
 [package]
 name = "thisctx"
@@ -13,7 +19,7 @@ readme = "README.md"
 repository = "https://github.com/loichyan/thisctx"
 documentation = "https://docs.rs/thisctx"
 
-keywords = ["error"]
+keywords = ["error", "derive"]
 categories = ["rust-patterns"]
 
 [dependencies]

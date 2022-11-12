@@ -1,4 +1,7 @@
-use crate::ast::{Enum, Field, Input, Struct, Variant};
+use crate::{
+    ast::{Enum, Field, Input, Struct, Variant},
+    attr::Suffix,
+};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{punctuated::Punctuated, DeriveInput, Fields, Ident, Member, Result, Token, Visibility};
@@ -24,6 +27,7 @@ pub fn impl_struct(input: Struct) -> TokenStream {
             .as_ref()
             .unwrap_or(&input.original.vis),
         ident: error,
+        suffix: input.attrs.thisctx.suffix.as_ref(),
         fields: &input.fields,
         original_fields: &input.data.fields,
     }
@@ -52,6 +56,12 @@ impl<'a> Enum<'a> {
                 .or(self.attrs.thisctx.vis.as_ref())
                 .unwrap_or(&self.original.vis),
             ident,
+            suffix: input
+                .attrs
+                .thisctx
+                .suffix
+                .as_ref()
+                .or(self.attrs.thisctx.suffix.as_ref()),
             fields: &input.fields,
             original_fields: &input.original.fields,
         }
@@ -63,6 +73,7 @@ struct Context<'a> {
     error: &'a Ident,
     vis: &'a Visibility,
     ident: &'a Ident,
+    suffix: Option<&'a Suffix>,
     fields: &'a [Field<'a>],
     original_fields: &'a Fields,
 }
@@ -125,7 +136,13 @@ impl<'a> Context<'a> {
             )
             .unwrap_or_else(|| quote!(()));
         let context_vis = self.vis;
-        let context_ty = format_ident!("{}{DEFAULT_SUFFIX}", self.ident, span = self.ident.span());
+        let context_ty = match self.suffix {
+            Some(Suffix::Flag(flag)) if !flag.value => self.ident.clone(),
+            Some(Suffix::Ident(suff)) => {
+                format_ident!("{}{}", self.ident, suff, span = self.ident.span())
+            }
+            _ => format_ident!("{}{}", self.ident, DEFAULT_SUFFIX, span = self.ident.span()),
+        };
         let error_ty = self.error;
         quote!(
             #context_vis struct #context_ty<#context_generic_defaults> #context_struct_body
