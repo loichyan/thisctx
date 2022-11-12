@@ -9,6 +9,7 @@ mod kw {
 
     custom_keyword!(visibility);
     custom_keyword!(suffix);
+    custom_keyword!(unit);
 }
 
 #[derive(Default)]
@@ -20,12 +21,13 @@ pub struct Attrs<'a> {
 
 #[derive(Default)]
 pub struct Thisctx {
-    pub vis: Option<Visibility>,
+    pub visibility: Option<Visibility>,
     pub suffix: Option<Suffix>,
+    pub unit: Option<bool>,
 }
 
 pub enum Suffix {
-    Flag(LitBool),
+    Flag(bool),
     Ident(Ident),
 }
 
@@ -33,7 +35,9 @@ impl Parse for Suffix {
     fn parse(input: ParseStream) -> Result<Self> {
         let lookhead = input.lookahead1();
         if lookhead.peek(LitBool) {
-            input.parse().map(Suffix::Flag)
+            input
+                .parse::<LitBool>()
+                .map(|flag| Suffix::Flag(flag.value))
         } else if lookhead.peek(Ident) {
             input.parse().map(Suffix::Ident)
         } else {
@@ -67,29 +71,32 @@ fn require_empty_attribute(attr: &Attribute) -> Result<()> {
 
 fn parse_thisctx_attribute(attrs: &mut Thisctx, attr: &Attribute) -> Result<()> {
     attr.parse_args_with(|input: ParseStream| {
+        macro_rules! check_dup {
+            ($attr:ident) => {{
+                let kw = input.parse::<kw::$attr>()?;
+                if attrs.$attr.is_some() {
+                    return Err(Error::new_spanned(
+                        kw,
+                        concat!("duplicate #[thisctx(", stringify!($attr), ")] attribute"),
+                    ));
+                }
+            }};
+        }
+
         loop {
             if input.is_empty() {
                 break;
             }
             let lookhead = input.lookahead1();
             if lookhead.peek(kw::visibility) {
-                let kw = input.parse::<kw::visibility>()?;
-                if attrs.vis.is_some() {
-                    return Err(Error::new_spanned(
-                        kw,
-                        "duplicate #[thisctx(visibility)] attribute",
-                    ));
-                }
-                attrs.vis = parse_thisctx_arg(input)?;
+                check_dup!(visibility);
+                attrs.visibility = parse_thisctx_arg(input)?;
             } else if lookhead.peek(kw::suffix) {
-                let kw = input.parse::<kw::suffix>()?;
-                if attrs.vis.is_some() {
-                    return Err(Error::new_spanned(
-                        kw,
-                        "duplicate #[thisctx(suffix)] attribute",
-                    ));
-                }
+                check_dup!(suffix);
                 attrs.suffix = parse_thisctx_arg(input)?;
+            } else if lookhead.peek(kw::unit) {
+                check_dup!(unit);
+                attrs.unit = parse_thisctx_arg::<LitBool>(input)?.map(|flag| flag.value);
             } else {
                 return Err(lookhead.error());
             }
