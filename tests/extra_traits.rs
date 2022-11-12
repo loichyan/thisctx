@@ -1,4 +1,4 @@
-use thisctx::WithContext;
+use thisctx::{IntoError, WithContext};
 
 #[derive(Debug, WithContext)]
 enum Error {

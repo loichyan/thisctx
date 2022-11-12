@@ -165,7 +165,7 @@ impl<'a> Context<'a> {
                 {
                     #[inline]
                     fn from(context: #context_ty<#context_generics>) -> Self {
-                        context.into_error(())
+                        thisctx::IntoError::into_error(context, ())
                     }
                 }
             ));
@@ -183,15 +183,6 @@ impl<'a> Context<'a> {
                 #[inline]
                 fn into_error(self, source: #source_ty) -> #error_ty {
                     #expr_struct #expr_struct_body
-                }
-            }
-
-            impl<#context_generics> #context_ty<#context_generics>
-            where #context_generic_bounds
-            {
-                #[inline]
-                fn into_error(self, source: #source_ty) -> #error_ty {
-                    <Self as thisctx::IntoError>::into_error(self, source)
                 }
             }
 
