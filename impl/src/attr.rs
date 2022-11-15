@@ -1,3 +1,4 @@
+use proc_macro2::TokenStream;
 use syn::{
     parenthesized,
     parse::{Nothing, Parse, ParseStream},
@@ -10,6 +11,7 @@ mod kw {
     custom_keyword!(visibility);
     custom_keyword!(suffix);
     custom_keyword!(unit);
+    custom_keyword!(attr);
 }
 
 #[derive(Default)]
@@ -24,6 +26,7 @@ pub struct Thisctx {
     pub visibility: Option<Visibility>,
     pub suffix: Option<Suffix>,
     pub unit: Option<bool>,
+    pub attr: Vec<TokenStream>,
 }
 
 pub enum Suffix {
@@ -97,6 +100,9 @@ fn parse_thisctx_attribute(attrs: &mut Thisctx, attr: &Attribute) -> Result<()> 
             } else if lookhead.peek(kw::unit) {
                 check_dup!(unit);
                 attrs.unit = parse_thisctx_arg::<LitBool>(input)?.map(|flag| flag.value);
+            } else if lookhead.peek(kw::attr) {
+                input.parse::<kw::attr>()?;
+                attrs.attr.extend(parse_thisctx_arg(input)?);
             } else {
                 return Err(lookhead.error());
             }

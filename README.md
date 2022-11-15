@@ -30,6 +30,7 @@ fn load_config(path: &Path) -> Result<String, Error> {
 - [x] Switch to Rust 2021.
 - [x] Use derive macro instead.
 - [ ] Support generics.
+- [ ] Add attributes to context types.
 
 ## ⚖️ License
 
