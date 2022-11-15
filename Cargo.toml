@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "impl",
+    "tests/attr.rs",
     "tests/derive_enum.rs",
     "tests/derive_struct.rs",
     "tests/extra_traits.rs",

@@ -24,6 +24,7 @@ pub fn impl_struct(input: Struct) -> TokenStream {
     }
 
     let error = &input.original.ident;
+    let attr = quote_attr(input.attrs.thisctx.attr.iter());
     Context {
         error,
         vis: attr!(visibility).unwrap_or(&input.original.vis),
@@ -32,6 +33,7 @@ pub fn impl_struct(input: Struct) -> TokenStream {
         fields: &input.fields,
         original_fields: &input.data.fields,
         unit: attr!(unit).copied(),
+        attr: &attr,
     }
     .impl_into_error(quote!(#error))
 }
@@ -59,6 +61,14 @@ impl<'a> Enum<'a> {
 
         let error = &self.original.ident;
         let ident = &input.original.ident;
+        let attr = quote_attr(
+            input
+                .attrs
+                .thisctx
+                .attr
+                .iter()
+                .chain(self.attrs.thisctx.attr.iter()),
+        );
         Context {
             error,
             vis: attr!(visibility).unwrap_or(&self.original.vis),
@@ -67,6 +77,7 @@ impl<'a> Enum<'a> {
             fields: &input.fields,
             original_fields: &input.original.fields,
             unit: attr!(unit).copied(),
+            attr: &attr,
         }
         .impl_into_error(quote!(#error::#ident))
     }
@@ -80,6 +91,11 @@ struct Context<'a> {
     fields: &'a [Field<'a>],
     original_fields: &'a Fields,
     unit: Option<bool>,
+    attr: &'a TokenStream,
+}
+
+fn quote_attr<'a>(attrs: impl IntoIterator<Item = &'a TokenStream>) -> TokenStream {
+    attrs.into_iter().map(|tokens| quote!(#[#tokens])).collect()
 }
 
 impl<'a> Context<'a> {
@@ -99,13 +115,14 @@ impl<'a> Context<'a> {
                 }
             } else {
                 let generic = format_ident!("T{index}");
+                let field_attr = quote_attr(field.attrs.thisctx.attr.iter());
                 let field_vis = field.attrs.thisctx.visibility.as_ref().unwrap_or(self.vis);
                 if let Some(ident) = &field.original.ident {
-                    context_struct_fields.push(quote!(#field_vis #ident: #generic));
+                    context_struct_fields.push(quote!(#field_attr #field_vis #ident: #generic));
                     expr_struct_fields.push(quote!(#ident: self.#ident.into()));
                 } else {
                     let member = Member::Unnamed(index.into());
-                    context_struct_fields.push(quote!(#field_vis #generic));
+                    context_struct_fields.push(quote!(#field_attr #field_vis #generic));
                     expr_struct_fields.push(quote!(self.#member.into()));
                 }
                 let field_ty = &field.original.ty;
@@ -141,6 +158,7 @@ impl<'a> Context<'a> {
             }
         }
 
+        let context_attr = self.attr;
         let context_vis = self.vis;
         let context_ty = match self.suffix {
             Some(Suffix::Flag(flag)) if !flag => self.ident.clone(),
@@ -172,6 +190,7 @@ impl<'a> Context<'a> {
         }
 
         quote!(
+            #context_attr
             #context_vis struct #context_ty<#context_generic_defaults> #context_struct_body
 
             impl<#context_generics> thisctx::IntoError for #context_ty<#context_generics>
