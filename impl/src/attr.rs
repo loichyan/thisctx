@@ -21,7 +21,6 @@ pub struct Attrs<'a> {
     pub thisctx: AttrThisctx,
     pub source: Option<&'a Attribute>,
     pub error: Option<AttrError<'a>>,
-    pub is_source: bool,
 }
 
 #[derive(Default)]

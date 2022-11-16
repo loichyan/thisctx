@@ -116,6 +116,23 @@ impl<'a> Attrs<'a> {
     }
 }
 
+fn find_source_field(fields: &[Field]) -> usize {
+    for (i, field) in fields.iter().enumerate() {
+        if field.attrs.source.is_some() {
+            return i;
+        }
+    }
+    for (i, field) in fields.iter().enumerate() {
+        match &field.original.ident {
+            Some(ident) if ident == "source" => {
+                return i;
+            }
+            _ => (),
+        }
+    }
+    fields.len()
+}
+
 struct Context<'a> {
     error: &'a TokenStream,
     vis: &'a Visibility,
@@ -133,14 +150,20 @@ fn quote_attr<'a>(attrs: impl IntoIterator<Item = &'a TokenStream>) -> TokenStre
 
 impl<'a> Context<'a> {
     fn impl_into_error(&self, expr_struct_path: TokenStream) -> TokenStream {
-        let mut context_generics = Punctuated::<_, Token![,]>::new();
-        let mut context_generic_defaults = Punctuated::<_, Token![,]>::new();
-        let mut context_generic_bounds = Punctuated::<_, Token![,]>::new();
-        let mut context_struct_fields = Punctuated::<_, Token![,]>::new();
-        let mut expr_struct_fields = Punctuated::<_, Token![,]>::new();
+        type CommaPunctuated<T> = Punctuated<T, Token![,]>;
+
+        let mut source_field_index = find_source_field(self.fields);
+        let source_field = self.fields.get(source_field_index);
+        let mut context_generics = CommaPunctuated::new();
+        let mut context_generic_defaults = CommaPunctuated::new();
+        let mut context_generic_bounds = CommaPunctuated::new();
+        let mut context_struct_fields = CommaPunctuated::new();
+        let mut expr_struct_fields = CommaPunctuated::new();
         let mut index = 0;
         for field in self.fields.iter() {
-            if field.is_source() {
+            if index == source_field_index {
+                // Make `source_field_index` unreachable.
+                source_field_index = self.fields.len();
                 if let Some(ident) = &field.original.ident {
                     expr_struct_fields.push(quote!(#ident: source));
                 } else {
@@ -167,10 +190,11 @@ impl<'a> Context<'a> {
         }
         let context_struct_body;
         let expr_struct_body;
-        let context_unit_body = index == 0 && !matches!(self.unit, Some(false));
+        let should_context_unit_body =
+            context_struct_fields.is_empty() && !matches!(self.unit, Some(false));
         match self.original_fields {
             Fields::Named(_) => {
-                context_struct_body = if context_unit_body {
+                context_struct_body = if should_context_unit_body {
                     quote!(;)
                 } else {
                     quote!({ #context_struct_fields })
@@ -178,7 +202,7 @@ impl<'a> Context<'a> {
                 expr_struct_body = quote!({ #expr_struct_fields });
             }
             Fields::Unnamed(_) => {
-                context_struct_body = if context_unit_body {
+                context_struct_body = if should_context_unit_body {
                     quote!(;)
                 } else {
                     quote!(( #context_struct_fields );)
@@ -202,7 +226,6 @@ impl<'a> Context<'a> {
         };
 
         let error_ty = self.error;
-        let source_field = self.fields.iter().find(|field| field.is_source());
         let source_ty;
         let impl_from_context_for_error;
         if let Some(field) = source_field {
