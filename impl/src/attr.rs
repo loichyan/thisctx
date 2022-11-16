@@ -13,22 +13,29 @@ mod kw {
     custom_keyword!(unit);
     custom_keyword!(attr);
     custom_keyword!(into);
+    custom_keyword!(transparent);
 }
 
 #[derive(Default)]
 pub struct Attrs<'a> {
-    pub thisctx: Thisctx,
+    pub thisctx: AttrThisctx,
     pub source: Option<&'a Attribute>,
+    pub error: Option<AttrError<'a>>,
     pub is_source: bool,
 }
 
 #[derive(Default)]
-pub struct Thisctx {
+pub struct AttrThisctx {
     pub visibility: Option<Visibility>,
     pub suffix: Option<Suffix>,
     pub unit: Option<bool>,
     pub attr: Vec<TokenStream>,
     pub into: Option<Type>,
+}
+
+#[derive(Default)]
+pub struct AttrError<'a> {
+    pub transparent: Option<&'a Attribute>,
 }
 
 pub enum Suffix {
@@ -54,18 +61,29 @@ impl Parse for Suffix {
 pub fn get(input: &[Attribute]) -> Result<Attrs> {
     let mut attrs = Attrs::default();
 
+    macro_rules! check_dup {
+        ($original:expr, $attr:ident) => {
+            if attrs.$attr.is_some() {
+                return Err(Error::new_spanned(
+                    $original,
+                    concat!("duplicate #[", stringify!($attr), "] attribute"),
+                ));
+            }
+        };
+    }
+
     for attr in input {
         if attr.path.is_ident("thisctx") {
             parse_thisctx_attribute(&mut attrs.thisctx, attr)?;
         } else if attr.path.is_ident("source") {
-            if attrs.source.is_some() {
-                require_empty_attribute(attr)?;
-                return Err(Error::new_spanned(attr, "duplicate #[source] attribute"));
-            }
+            require_empty_attribute(attr)?;
+            check_dup!(attr, source);
             attrs.source = Some(attr);
+        } else if attr.path.is_ident("error") {
+            check_dup!(attr, error);
+            attrs.error = Some(parse_error_attribute(attr)?);
         }
     }
-
     Ok(attrs)
 }
 
@@ -74,7 +92,7 @@ fn require_empty_attribute(attr: &Attribute) -> Result<()> {
     Ok(())
 }
 
-fn parse_thisctx_attribute(attrs: &mut Thisctx, attr: &Attribute) -> Result<()> {
+fn parse_thisctx_attribute(attrs: &mut AttrThisctx, attr: &Attribute) -> Result<()> {
     attr.parse_args_with(|input: ParseStream| {
         macro_rules! check_dup {
             ($attr:ident) => {{
@@ -127,5 +145,18 @@ fn parse_thisctx_arg<T: Parse>(input: ParseStream) -> Result<Option<T>> {
         Some(content.parse()?)
     } else {
         None
+    })
+}
+
+fn parse_error_attribute(attr: &Attribute) -> Result<AttrError> {
+    attr.parse_args_with(|input: ParseStream| {
+        let mut error = AttrError::default();
+        if input.peek(kw::transparent) {
+            input.parse::<kw::transparent>()?;
+            error.transparent = Some(attr);
+        } else {
+            input.parse::<TokenStream>()?;
+        }
+        Ok(error)
     })
 }
