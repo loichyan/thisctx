@@ -2,6 +2,7 @@ use thisctx::WithContext;
 
 #[derive(Debug, WithContext)]
 #[thisctx(suffix(true))]
+#[allow(clippy::enum_variant_names)]
 enum Error {
     DefaultSuffix,
     #[thisctx(suffix(false))]

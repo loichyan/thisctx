@@ -1,6 +1,6 @@
 # 🎈 thisctx
 
-A simple crate works with [thiserror](https://crates.io/crates/thiserror) to
+A small crate works with [thiserror](https://crates.io/crates/thiserror) to
 create errors with contexts, inspired by
 [snafu](https://crates.io/crates/snafu).
 
@@ -29,8 +29,9 @@ fn load_config(path: &Path) -> Result<String, Error> {
 
 - [x] Switch to Rust 2021.
 - [x] Use derive macro instead.
+- [x] Add attributes to context types.
+- [x] Support transparent error.
 - [ ] Support generics.
-- [ ] Add attributes to context types.
 
 ## ⚖️ License
 

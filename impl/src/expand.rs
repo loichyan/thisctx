@@ -22,20 +22,26 @@ pub fn impl_struct(input: Struct) -> TokenStream {
             input.attrs.thisctx.$ident.as_ref()
         }};
     }
-
-    let error = &input.original.ident;
+    let ident = &input.original.ident;
+    let error = input
+        .attrs
+        .thisctx
+        .into
+        .as_ref()
+        .map(<_>::to_token_stream)
+        .unwrap_or_else(|| ident.to_token_stream());
     let attr = quote_attr(input.attrs.thisctx.attr.iter());
     Context {
-        error,
+        error: &error,
         vis: attr!(visibility).unwrap_or(&input.original.vis),
-        ident: error,
+        ident,
         suffix: attr!(suffix),
         fields: &input.fields,
         original_fields: &input.data.fields,
         unit: attr!(unit).copied(),
         attr: &attr,
     }
-    .impl_into_error(quote!(#error))
+    .impl_into_error(quote!(#ident))
 }
 
 pub fn impl_enum(input: Enum) -> TokenStream {
@@ -59,8 +65,15 @@ impl<'a> Enum<'a> {
             }};
         }
 
-        let error = &self.original.ident;
+        let enum_ident = &self.original.ident;
         let ident = &input.original.ident;
+        let error = self
+            .attrs
+            .thisctx
+            .into
+            .as_ref()
+            .map(<_>::to_token_stream)
+            .unwrap_or_else(|| enum_ident.to_token_stream());
         let attr = quote_attr(
             input
                 .attrs
@@ -70,7 +83,7 @@ impl<'a> Enum<'a> {
                 .chain(self.attrs.thisctx.attr.iter()),
         );
         Context {
-            error,
+            error: &error,
             vis: attr!(visibility).unwrap_or(&self.original.vis),
             ident,
             suffix: attr!(suffix),
@@ -79,12 +92,12 @@ impl<'a> Enum<'a> {
             unit: attr!(unit).copied(),
             attr: &attr,
         }
-        .impl_into_error(quote!(#error::#ident))
+        .impl_into_error(quote!(#enum_ident::#ident))
     }
 }
 
 struct Context<'a> {
-    error: &'a Ident,
+    error: &'a TokenStream,
     vis: &'a Visibility,
     ident: &'a Ident,
     suffix: Option<&'a Suffix>,
@@ -99,7 +112,7 @@ fn quote_attr<'a>(attrs: impl IntoIterator<Item = &'a TokenStream>) -> TokenStre
 }
 
 impl<'a> Context<'a> {
-    fn impl_into_error(&self, expr_struct: TokenStream) -> TokenStream {
+    fn impl_into_error(&self, expr_struct_path: TokenStream) -> TokenStream {
         let mut context_generics = Punctuated::<_, Token![,]>::new();
         let mut context_generic_defaults = Punctuated::<_, Token![,]>::new();
         let mut context_generic_bounds = Punctuated::<_, Token![,]>::new();
@@ -127,7 +140,7 @@ impl<'a> Context<'a> {
                 }
                 let field_ty = &field.original.ty;
                 context_generic_defaults.push(quote!(#generic = #field_ty));
-                context_generic_bounds.push(quote!(#generic: core::convert::Into<#field_ty>));
+                context_generic_bounds.push(quote!(#generic: ::core::convert::Into<#field_ty>));
                 context_generics.push(generic);
                 index += 1;
             }
@@ -183,7 +196,7 @@ impl<'a> Context<'a> {
                 {
                     #[inline]
                     fn from(context: #context_ty<#context_generics>) -> Self {
-                        thisctx::IntoError::into_error(context, ())
+                        ::thisctx::IntoError::into_error(context, ())
                     }
                 }
             ));
@@ -193,7 +206,7 @@ impl<'a> Context<'a> {
             #context_attr
             #context_vis struct #context_ty<#context_generic_defaults> #context_struct_body
 
-            impl<#context_generics> thisctx::IntoError for #context_ty<#context_generics>
+            impl<#context_generics> ::thisctx::IntoError for #context_ty<#context_generics>
             where #context_generic_bounds
             {
                 type Error = #error_ty;
@@ -201,7 +214,8 @@ impl<'a> Context<'a> {
 
                 #[inline]
                 fn into_error(self, source: #source_ty) -> #error_ty {
-                    #expr_struct #expr_struct_body
+                    #[allow(clippy::useless_conversion)]
+                    <#error_ty as ::core::convert::From<_>>::from(#expr_struct_path #expr_struct_body)
                 }
             }
 
