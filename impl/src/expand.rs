@@ -1,6 +1,6 @@
 use crate::{
     ast::{Enum, Field, Input, Struct, Variant},
-    attr::Suffix,
+    attr::{Attrs, Suffix},
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
@@ -11,43 +11,55 @@ const DEFAULT_SUFFIX: &str = "Context";
 pub fn derive(node: &DeriveInput) -> Result<TokenStream> {
     let input = Input::from_syn(node)?;
     Ok(match input {
-        Input::Struct(input) => impl_struct(input),
+        Input::Struct(input) => impl_struct(input).to_token_stream(),
         Input::Enum(input) => impl_enum(input),
     })
 }
 
-pub fn impl_struct(input: Struct) -> TokenStream {
+pub fn impl_struct(input: Struct) -> Option<TokenStream> {
     macro_rules! attr {
         ($ident:ident) => {{
             input.attrs.thisctx.$ident.as_ref()
         }};
     }
-
-    let error = &input.original.ident;
-    let attr = quote_attr(input.attrs.thisctx.attr.iter());
-    Context {
-        error,
-        vis: attr!(visibility).unwrap_or(&input.original.vis),
-        ident: error,
-        suffix: attr!(suffix),
-        fields: &input.fields,
-        original_fields: &input.data.fields,
-        unit: attr!(unit).copied(),
-        attr: &attr,
+    if input.attrs.is_transparent() {
+        return None;
     }
-    .impl_into_error(quote!(#error))
+
+    let ident = &input.original.ident;
+    let error = input
+        .attrs
+        .thisctx
+        .into
+        .as_ref()
+        .map(<_>::to_token_stream)
+        .unwrap_or_else(|| ident.to_token_stream());
+    let attr = quote_attr(input.attrs.thisctx.attr.iter());
+    Some(
+        Context {
+            error: &error,
+            vis: attr!(visibility).unwrap_or(&input.original.vis),
+            ident,
+            suffix: attr!(suffix),
+            fields: &input.fields,
+            original_fields: &input.data.fields,
+            unit: attr!(unit).copied(),
+            attr: &attr,
+        }
+        .impl_into_error(quote!(#ident)),
+    )
 }
 
 pub fn impl_enum(input: Enum) -> TokenStream {
     input
         .variants
         .iter()
-        .map(|variant| input.impl_variant(variant))
+        .map(|variant| input.impl_variant(variant).to_token_stream())
         .collect()
 }
 
 impl<'a> Enum<'a> {
-    fn impl_variant(&self, input: &Variant) -> TokenStream {
+    fn impl_variant(&self, input: &Variant) -> Option<TokenStream> {
         macro_rules! attr {
             ($ident:ident) => {{
                 input
@@ -58,9 +70,19 @@ impl<'a> Enum<'a> {
                     .or(self.attrs.thisctx.$ident.as_ref())
             }};
         }
+        if input.attrs.is_transparent() {
+            return None;
+        }
 
-        let error = &self.original.ident;
+        let enum_ident = &self.original.ident;
         let ident = &input.original.ident;
+        let error = self
+            .attrs
+            .thisctx
+            .into
+            .as_ref()
+            .map(<_>::to_token_stream)
+            .unwrap_or_else(|| enum_ident.to_token_stream());
         let attr = quote_attr(
             input
                 .attrs
@@ -69,22 +91,33 @@ impl<'a> Enum<'a> {
                 .iter()
                 .chain(self.attrs.thisctx.attr.iter()),
         );
-        Context {
-            error,
-            vis: attr!(visibility).unwrap_or(&self.original.vis),
-            ident,
-            suffix: attr!(suffix),
-            fields: &input.fields,
-            original_fields: &input.original.fields,
-            unit: attr!(unit).copied(),
-            attr: &attr,
-        }
-        .impl_into_error(quote!(#error::#ident))
+        Some(
+            Context {
+                error: &error,
+                vis: attr!(visibility).unwrap_or(&self.original.vis),
+                ident,
+                suffix: attr!(suffix),
+                fields: &input.fields,
+                original_fields: &input.original.fields,
+                unit: attr!(unit).copied(),
+                attr: &attr,
+            }
+            .impl_into_error(quote!(#enum_ident::#ident)),
+        )
+    }
+}
+
+impl<'a> Attrs<'a> {
+    fn is_transparent(&self) -> bool {
+        self.error
+            .as_ref()
+            .and_then(|e| e.transparent.as_ref())
+            .is_some()
     }
 }
 
 struct Context<'a> {
-    error: &'a Ident,
+    error: &'a TokenStream,
     vis: &'a Visibility,
     ident: &'a Ident,
     suffix: Option<&'a Suffix>,
@@ -99,7 +132,7 @@ fn quote_attr<'a>(attrs: impl IntoIterator<Item = &'a TokenStream>) -> TokenStre
 }
 
 impl<'a> Context<'a> {
-    fn impl_into_error(&self, expr_struct: TokenStream) -> TokenStream {
+    fn impl_into_error(&self, expr_struct_path: TokenStream) -> TokenStream {
         let mut context_generics = Punctuated::<_, Token![,]>::new();
         let mut context_generic_defaults = Punctuated::<_, Token![,]>::new();
         let mut context_generic_bounds = Punctuated::<_, Token![,]>::new();
@@ -127,7 +160,7 @@ impl<'a> Context<'a> {
                 }
                 let field_ty = &field.original.ty;
                 context_generic_defaults.push(quote!(#generic = #field_ty));
-                context_generic_bounds.push(quote!(#generic: core::convert::Into<#field_ty>));
+                context_generic_bounds.push(quote!(#generic: ::core::convert::Into<#field_ty>));
                 context_generics.push(generic);
                 index += 1;
             }
@@ -183,7 +216,7 @@ impl<'a> Context<'a> {
                 {
                     #[inline]
                     fn from(context: #context_ty<#context_generics>) -> Self {
-                        thisctx::IntoError::into_error(context, ())
+                        ::thisctx::IntoError::into_error(context, ())
                     }
                 }
             ));
@@ -191,9 +224,10 @@ impl<'a> Context<'a> {
 
         quote!(
             #context_attr
-            #context_vis struct #context_ty<#context_generic_defaults> #context_struct_body
+            #context_vis struct #context_ty<#context_generic_defaults>
+            #context_struct_body
 
-            impl<#context_generics> thisctx::IntoError for #context_ty<#context_generics>
+            impl<#context_generics> ::thisctx::IntoError for #context_ty<#context_generics>
             where #context_generic_bounds
             {
                 type Error = #error_ty;
@@ -201,7 +235,10 @@ impl<'a> Context<'a> {
 
                 #[inline]
                 fn into_error(self, source: #source_ty) -> #error_ty {
-                    #expr_struct #expr_struct_body
+                    #[allow(clippy::useless_conversion)]
+                    <#error_ty as ::core::convert::From<_>>::from(
+                        #expr_struct_path #expr_struct_body
+                    )
                 }
             }
 
