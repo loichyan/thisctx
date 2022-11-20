@@ -1,16 +1,5 @@
 [workspace]
-members = [
-    "impl",
-    "tests/attr.rs",
-    "tests/derive_enum.rs",
-    "tests/derive_struct.rs",
-    "tests/enum_into.rs",
-    "tests/extra_traits.rs",
-    "tests/struct_into.rs",
-    "tests/suffix.rs",
-    "tests/unit.rs",
-    "tests/visibility.rs",
-]
+members = ["impl"]
 
 [package]
 name = "thisctx"
