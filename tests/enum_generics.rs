@@ -28,8 +28,14 @@ enum BoundedLifetime<'a, 'b: 'a> {
     Variant8(&'a str, String, &'b str),
 }
 
-// #[derive(WithContext)]
-// enum UnusedLifetime<'a, 'b> {
-//     Variant9(&'a str),
-//     Variant10(&'b [u8]),
-// }
+#[derive(WithContext)]
+enum UnusedLifetime<'a, 'b> {
+    Variant9(&'a str),
+    Variant10(&'b [u8]),
+}
+
+#[derive(WithContext)]
+enum UnusedGeneric<T1, T2> {
+    Variant11(T1),
+    Variant12(T2),
+}

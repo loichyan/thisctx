@@ -13,7 +13,7 @@ type GenericBounds<'a> = crate::generics::GenericBounds<'a, GenericBoundsContext
 const DEFAULT_SUFFIX: &str = "Context";
 
 macro_rules! quote_extend {
-    ($tokens:ident=> $($tt:tt)*) => {{
+    ($tokens:expr=> $($tt:tt)*) => {{
         let mut _s = &mut *$tokens;
         ::quote::quote_each_token!(_s $($tt)*);
     }};
@@ -94,7 +94,7 @@ struct ContextOptions<'a> {
     visibility: Option<&'a Visibility>,
     suffix: Option<&'a Suffix>,
     unit: Option<bool>,
-    into: Option<&'a Type>,
+    into: Vec<&'a Type>,
     attr: TokenStream,
 }
 
@@ -120,10 +120,11 @@ impl<'a> ContextOptions<'a> {
         }
 
         for attrs in attrs_iter {
-            update_options!(attrs, visibility, suffix, into);
+            update_options!(attrs, visibility, suffix);
             if let Some(unit) = attrs.thisctx.unit {
                 new.unit = Some(unit);
             }
+            new.into.extend(attrs.thisctx.into.iter());
         }
 
         new
@@ -224,74 +225,71 @@ impl<'a> Context<'a> {
         .quote(context_fields, true);
         let constructor_body = self.surround.quote(constructor_fields, false);
 
-        // Generate type of error.
-        let constructor_ident = &self.input.ident;
-        let error_ty = self
-            .options
-            .into
-            .map(QuoteMultiTypes::Variant1)
-            .unwrap_or_else(|| {
-                QuoteMultiTypes::Variant2(quote!(#constructor_ident::<#constructor_generics>))
-            });
-
         // Generate type of context.
         let context_ty = {
             let ident = self.ident;
             let span = self.ident.span();
             match self.options.suffix {
-                Some(Suffix::Flag(false)) => QuoteMultiTypes::Variant1(self.ident),
                 Some(Suffix::Flag(true)) | None => {
-                    QuoteMultiTypes::Variant2(format_ident!("{ident}{DEFAULT_SUFFIX}", span = span))
+                    format_ident!("{ident}{DEFAULT_SUFFIX}", span = span)
                 }
-                Some(Suffix::Ident(suffix)) => {
-                    QuoteMultiTypes::Variant2(format_ident!("{ident}{suffix}", span = span))
-                }
+                Some(Suffix::Ident(suffix)) => format_ident!("{ident}{suffix}", span = span),
+                Some(Suffix::Flag(false)) => self.ident.clone(),
             }
         };
 
-        // Generate `impl From for Error`.
-        let impl_from_for_error = if source_ty.is_none() {
-            Some(quote!(
-                impl<#impl_generics>
-                ::core::convert::From<#context_ty<#context_generics>>
-                for #error_ty
-                where #impl_bounds {
-                    #[inline]
-                    fn from(context: #context_ty<#context_generics>) -> Self {
-                        ::thisctx::IntoError::into_error(context, ())
-                    }
-                }
-            ))
-        } else {
-            None
-        };
+        // Generate consturctor path.
+        let constructor_ident = &self.input.ident;
+        let consturctor_path = quote!(#constructor_ident::<#constructor_generics>);
 
-        // Generate definiton of context and impl `IntoError` for it.
-        let source_ty = QuoteSourceType(source_ty);
+        // Generate context definition.
+        let mut tokens = TokenStream::default();
         let context_attr = &self.options.attr;
-        let constructor_type_variant = self.variant.map(QuoteWithColon2);
-        quote!(
+        quote_extend!(&mut tokens=>
             #context_attr #context_vis
             struct #context_ty<#context_definition_generics>
             #context_definition_body
+        );
 
-            impl<#impl_generics> ::thisctx::IntoError
-            for #context_ty<#context_generics>
-            where #impl_bounds {
-                type Error = #error_ty;
-                type Source = #source_ty;
-
-                #[inline]
-                fn into_error(self, source: #source_ty) -> #error_ty {
-                    ::core::convert::From::from(
-                        #constructor_ident #constructor_type_variant
-                        #constructor_body
-                    )
-                }
+        let source_ty = QuoteSourceType(source_ty);
+        let constructor_type_variant = self.variant.map(QuoteWithColon2);
+        for error_ty in std::iter::once(QuoteMultiTypes::Variant2(consturctor_path))
+            .chain(self.options.into.iter().map(QuoteMultiTypes::Variant1))
+        {
+            // Generate `impl From for Error`.
+            if source_ty.0.is_none() {
+                quote_extend!(&mut tokens=>
+                    impl<#impl_generics>
+                    ::core::convert::From<#context_ty<#context_generics>>
+                    for #error_ty
+                    where #impl_bounds {
+                        #[inline]
+                        fn from(context: #context_ty<#context_generics>) -> Self {
+                            ::thisctx::IntoError::into_error(context, ())
+                        }
+                    }
+                );
             }
 
-            #impl_from_for_error
-        )
+            // Generate definiton of context and impl `IntoError` for it.
+            quote_extend!(&mut tokens=>
+                impl<#impl_generics> ::thisctx::IntoError<#error_ty>
+                for #context_ty<#context_generics>
+                where #impl_bounds {
+                    type Source = #source_ty;
+
+                    #[inline]
+                    fn into_error(self, source: #source_ty) -> #error_ty {
+                        ::core::convert::From::from(
+                            #constructor_ident #constructor_type_variant
+                            #constructor_body
+                        )
+                    }
+                }
+            );
+        }
+
+        tokens
     }
 }
 

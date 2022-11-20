@@ -8,18 +8,21 @@ enum Error {
 }
 
 #[derive(Debug, Error, WithContext)]
+enum Error2 {
+    #[error(transparent)]
+    Transparent2(#[from] TransparentStruct),
+}
+
+#[derive(Debug, Error, WithContext)]
 #[thisctx(into(Error))]
+#[thisctx(into(Error2))]
 #[error("{reason}")]
 struct TransparentStruct {
     reason: String,
 }
 
-fn requires_error(_: Error) {}
-
 #[test]
 fn with_context() {
-    requires_error(
-        ().context(TransparentStructContext { reason: "whatever" })
-            .unwrap_err(),
-    );
+    let _: Error = ().context(TransparentStructContext { reason: "whatever" }).unwrap_err();
+    let _: Error2 = ().context(TransparentStructContext { reason: "whatever" }).unwrap_err();
 }
