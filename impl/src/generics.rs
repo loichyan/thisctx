@@ -1,7 +1,7 @@
 use std::collections::{btree_map::Entry as MapEntry, BTreeMap as Map};
 use syn::{
-    GenericArgument, GenericParam, Generics, Ident, Lifetime, PathArguments, TraitBound, Type,
-    WherePredicate,
+    Expr, GenericArgument, GenericParam, Generics, Ident, Lifetime, PathArguments, TraitBound,
+    Type, WherePredicate,
 };
 
 pub struct GenericsAnalyzer<'a, C> {
@@ -88,55 +88,9 @@ impl<'a, C> GenericsAnalyzer<'a, C> {
     pub fn intersects(
         &mut self,
         ty: &'a Type,
-        mut cb: impl FnMut(GenericName<'a>, &mut GenericBounds<'a, C>),
+        cb: impl FnMut(GenericName<'a>, &mut GenericBounds<'a, C>),
     ) {
-        self.intersects_impl(ty, &mut cb);
-    }
-
-    fn intersects_impl(
-        &mut self,
-        ty: &'a Type,
-        cb: &mut impl FnMut(GenericName<'a>, &mut GenericBounds<'a, C>),
-    ) {
-        match ty {
-            Type::Path(ty) => {
-                if ty.qself.is_none() {
-                    if let Some(ident) = ty.path.get_ident() {
-                        self.intersects_callback(ident, &mut *cb);
-                    }
-                }
-                for segment in ty.path.segments.iter() {
-                    if let PathArguments::AngleBracketed(arguments) = &segment.arguments {
-                        for arg in arguments.args.iter() {
-                            match arg {
-                                GenericArgument::Type(ty) => self.intersects_impl(ty, cb),
-                                GenericArgument::Lifetime(lt) => {
-                                    self.intersects_callback(lt, &mut *cb);
-                                }
-                                _ => (),
-                            }
-                        }
-                    }
-                }
-            }
-            Type::Reference(ty) => {
-                if let Some(lt) = ty.lifetime.as_ref() {
-                    self.intersects_callback(lt, &mut *cb);
-                }
-                self.intersects_impl(&ty.elem, cb);
-            }
-            _ => (),
-        }
-    }
-
-    fn intersects_callback(
-        &mut self,
-        name: impl Into<GenericName<'a>>,
-        cb: impl FnOnce(GenericName<'a>, &mut GenericBounds<'a, C>),
-    ) {
-        if let Some((key, bounds)) = self.bounds.get_mut(name) {
-            cb(key, bounds);
-        }
+        ImplIntersects { analyzer: self, cb }.ty(ty);
     }
 
     pub fn from_syn(generics: &'a Generics) -> Self
@@ -211,6 +165,104 @@ impl<'a, C> GenericsAnalyzer<'a, C> {
             .insert_or_default(name.into())
             .params
             .extend(bounds.map(T::into));
+    }
+}
+
+struct ImplIntersects<'a, 'b, C, F> {
+    analyzer: &'b mut GenericsAnalyzer<'a, C>,
+    cb: F,
+}
+
+impl<'a, 'b, C, F> ImplIntersects<'a, 'b, C, F>
+where
+    F: FnMut(GenericName<'a>, &mut GenericBounds<'a, C>),
+{
+    fn ty(&mut self, ty: &'a Type) {
+        match ty {
+            Type::Array(ty) => {
+                self.ty(&ty.elem);
+                self.expr(&ty.len);
+            }
+            Type::BareFn(ty) => {
+                for arg in ty.inputs.iter() {
+                    self.ty(&arg.ty);
+                }
+                self.return_ty(&ty.output);
+            }
+            Type::Group(ty) => self.ty(&ty.elem),
+            Type::Paren(ty) => self.ty(&ty.elem),
+            Type::Path(ty) => self.path(ty.qself.is_none(), &ty.path),
+            Type::Ptr(ty) => self.ty(&ty.elem),
+            Type::Reference(ty) => {
+                if let Some(lt) = ty.lifetime.as_ref() {
+                    self.callback(lt);
+                }
+                self.ty(&ty.elem);
+            }
+            Type::Slice(ty) => self.ty(&ty.elem),
+            Type::TraitObject(ty) => {
+                for bound in ty.bounds.iter() {
+                    match bound {
+                        syn::TypeParamBound::Trait(ty) => self.path(true, &ty.path),
+                        syn::TypeParamBound::Lifetime(lt) => self.callback(lt),
+                    }
+                }
+            }
+            Type::Tuple(ty) => {
+                for ty in ty.elems.iter() {
+                    self.ty(ty);
+                }
+            }
+            _ => (),
+        }
+    }
+
+    fn expr(&mut self, expr: &'a Expr) {
+        if let Expr::Path(ty) = expr {
+            self.path(ty.qself.is_none(), &ty.path);
+        }
+    }
+
+    fn path(&mut self, check_ident: bool, path: &'a syn::Path) {
+        if check_ident {
+            if let Some(ident) = path.get_ident() {
+                self.callback(ident);
+            }
+        }
+        for segment in path.segments.iter() {
+            match &segment.arguments {
+                PathArguments::AngleBracketed(arguments) => {
+                    for arg in arguments.args.iter() {
+                        match arg {
+                            GenericArgument::Lifetime(lt) => self.callback(lt),
+                            GenericArgument::Type(ty) => self.ty(ty),
+                            GenericArgument::Const(expr) => self.expr(expr),
+                            GenericArgument::Binding(ty) => self.ty(&ty.ty),
+                            _ => (),
+                        }
+                    }
+                }
+                PathArguments::Parenthesized(arguments) => {
+                    for ty in arguments.inputs.iter() {
+                        self.ty(ty);
+                    }
+                    self.return_ty(&arguments.output);
+                }
+                _ => (),
+            }
+        }
+    }
+
+    fn return_ty(&mut self, ty: &'a syn::ReturnType) {
+        if let syn::ReturnType::Type(_, ty) = &ty {
+            self.ty(ty);
+        }
+    }
+
+    fn callback(&mut self, name: impl Into<GenericName<'a>>) {
+        if let Some((key, bounds)) = self.analyzer.bounds.get_mut(name) {
+            (self.cb)(key, bounds);
+        }
     }
 }
 

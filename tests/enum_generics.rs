@@ -39,3 +39,9 @@ enum UnusedGeneric<T1, T2> {
     Variant11(T1),
     Variant12(T2),
 }
+
+#[derive(WithContext)]
+enum ConstGeneric<const N1: usize, const N2: usize> {
+    Variant13([String; N1]),
+    Variant14([String; N2]),
+}
