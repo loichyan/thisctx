@@ -12,7 +12,7 @@ enum Error {
 }
 
 #[test]
-fn with_context() {
+fn suffix() {
     true.context(DefaultSuffixContext).unwrap();
     true.context(NoSuffix).unwrap();
     true.context(CustomSuffixThisctx).unwrap();

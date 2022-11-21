@@ -45,3 +45,15 @@ enum ConstGeneric<const N1: usize, const N2: usize> {
     Variant13([String; N1]),
     Variant14([String; N2]),
 }
+
+#[derive(WithContext)]
+struct GenricOrder<T1, T2>(T2, T1);
+
+#[derive(WithContext)]
+struct GenericDefault<T1, T2>(T1, String, T2);
+
+#[test]
+fn generic_order() {
+    let _ = GenricOrderContext::<String, i32>(0, String::default());
+    let _ = GenericDefaultContext::<i32, ()>(0, String::default(), ());
+}

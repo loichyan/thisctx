@@ -14,7 +14,7 @@ pub enum Error {
 fn requires_copied<T: Copy>(_: T) {}
 
 #[test]
-fn copy_context() {
+fn attr() {
     let ctx = ExtendAttributesContext("What's going on?");
     requires_copied(ctx);
 }

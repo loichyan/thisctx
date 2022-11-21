@@ -22,7 +22,7 @@ struct TransparentStruct {
 }
 
 #[test]
-fn with_context() {
+fn struct_into() {
     let _: Error = ().context(TransparentStructContext { reason: "whatever" }).unwrap_err();
     let _: Error2 = ().context(TransparentStructContext { reason: "whatever" }).unwrap_err();
 }
