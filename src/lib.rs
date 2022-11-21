@@ -20,6 +20,7 @@
 //!     std::fs::read_to_string(path).context(IoFaildContext { path })
 //! }
 //! ```
+#![no_std]
 
 pub use thisctx_impl::WithContext;
 
