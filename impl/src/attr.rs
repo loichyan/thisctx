@@ -14,6 +14,8 @@ mod kw {
     custom_keyword!(attr);
     custom_keyword!(into);
     custom_keyword!(transparent);
+    custom_keyword!(generic);
+    custom_keyword!(context);
 }
 
 #[derive(Default)]
@@ -28,8 +30,11 @@ pub struct AttrThisctx {
     pub visibility: Option<Visibility>,
     pub suffix: Option<Suffix>,
     pub unit: Option<bool>,
+    // TODO: support multi input
     pub attr: Vec<TokenStream>,
     pub into: Vec<Type>,
+    pub generic: Option<bool>,
+    pub context: Option<bool>,
 }
 
 #[derive(Default)]
@@ -118,13 +123,19 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, attr: &Attribute) -> Result<
                 attrs.suffix = parse_thisctx_arg(input)?;
             } else if lookhead.peek(kw::unit) {
                 check_dup!(unit);
-                attrs.unit = parse_thisctx_arg::<LitBool>(input)?.map(|flag| flag.value);
+                attrs.unit = parse_bool(input)?;
             } else if lookhead.peek(kw::attr) {
                 input.parse::<kw::attr>()?;
                 attrs.attr.extend(parse_thisctx_arg(input)?);
             } else if lookhead.peek(kw::into) {
                 input.parse::<kw::into>()?;
                 attrs.into.extend(parse_thisctx_arg(input)?);
+            } else if lookhead.peek(kw::generic) {
+                check_dup!(generic);
+                attrs.generic = parse_bool(input)?;
+            } else if lookhead.peek(kw::context) {
+                check_dup!(context);
+                attrs.context = parse_bool(input)?;
             } else {
                 return Err(lookhead.error());
             }
@@ -135,6 +146,10 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, attr: &Attribute) -> Result<
         }
         Ok(())
     })
+}
+
+fn parse_bool(input: ParseStream) -> Result<Option<bool>> {
+    Ok(parse_thisctx_arg::<LitBool>(input)?.map(|flag| flag.value))
 }
 
 fn parse_thisctx_arg<T: Parse>(input: ParseStream) -> Result<Option<T>> {

@@ -28,7 +28,7 @@ pub fn derive(node: &DeriveInput) -> Result<TokenStream> {
 }
 
 pub fn impl_struct(input: Struct) -> Option<TokenStream> {
-    if input.attrs.is_transparent() {
+    if matches!(input.attrs.context(), Some(false)) || input.attrs.is_transparent() {
         return None;
     }
     Some(
@@ -54,7 +54,10 @@ pub fn impl_enum(input: Enum) -> TokenStream {
 
 impl<'a> Enum<'a> {
     fn impl_variant(&self, input: &Variant) -> Option<TokenStream> {
-        if input.attrs.is_transparent() {
+        #[allow(clippy::or_fun_call)]
+        if matches!(input.attrs.context().or(self.attrs.context()), Some(false))
+            || input.attrs.is_transparent()
+        {
             return None;
         }
         Some(
@@ -78,6 +81,10 @@ impl<'a> Attrs<'a> {
             .and_then(|e| e.transparent.as_ref())
             .is_some()
     }
+
+    fn context(&self) -> Option<bool> {
+        self.thisctx.context
+    }
 }
 
 struct Context<'a> {
@@ -96,6 +103,7 @@ struct ContextOptions<'a> {
     unit: Option<bool>,
     into: Vec<&'a Type>,
     attr: TokenStream,
+    generic: Option<bool>,
 }
 
 #[derive(Default)]
@@ -108,23 +116,36 @@ impl<'a> ContextOptions<'a> {
         let mut new = ContextOptions::default();
 
         macro_rules! update_options {
-            ($attrs:ident, $($attr:ident),*) => {
-                $(if let Some(attr) = $attrs.thisctx.$attr.as_ref() {
+            ($attrs:expr=> ) => {};
+            ($attrs:expr=> $attr:ident, $($rest:tt)*) => {
+                if let Some(attr) = $attrs.thisctx.$attr.as_ref() {
                     new.$attr = Some(attr);
-                })*
+                }
+                update_options!($attrs=> $($rest)*);
+            };
+            ($attrs:expr=> *$attr:ident, $($rest:tt)*) => {
+                if let Some(&attr) = $attrs.thisctx.$attr.as_ref() {
+                    new.$attr = Some(attr);
+                }
+                update_options!($attrs=> $($rest)*);
+            };
+            ($attrs:expr=> +$attr:ident, $($rest:tt)*) => {
+                new.$attr.extend($attrs.thisctx.$attr.iter());
+                update_options!($attrs=> $($rest)*);
             };
         }
 
         for attrs in attrs_iter.clone().rev() {
             QuoteAttrs(&attrs.thisctx.attr).to_tokens(&mut new.attr);
         }
-
         for attrs in attrs_iter {
-            update_options!(attrs, visibility, suffix);
-            if let Some(unit) = attrs.thisctx.unit {
-                new.unit = Some(unit);
-            }
-            new.into.extend(attrs.thisctx.into.iter());
+            update_options!(attrs=>
+                visibility,
+                suffix,
+                *unit,
+                +into,
+                *generic,
+            );
         }
 
         new
@@ -173,17 +194,23 @@ impl<'a> Context<'a> {
                 source_ty = Some(original_ty);
                 field_ty = FieldType::Source;
             } else {
-                let mut found = false;
+                let mut generated = true;
                 // Check if type of the field intersects with input generics.
                 generics_analyzer.intersects(original_ty, |_, bounds| {
-                    found = true;
+                    generated = false;
                     bounds.context.selected = true;
                 });
-                field_ty = if found {
-                    FieldType::Original(original_ty)
-                } else {
+                generated = generated
+                    && !matches!(
+                        field.attrs.thisctx.generic.or(self.options.generic),
+                        Some(false),
+                    );
+                field_ty = if generated {
                     // Generate a new type for conversion.
+                    // TODO: better generated name
                     FieldType::Generated(format_ident!("__T{index}"), original_ty)
+                } else {
+                    FieldType::Original(original_ty)
                 };
                 // Increase index.
                 index += 1;
