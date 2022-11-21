@@ -24,6 +24,7 @@
 
 pub use thisctx_impl::WithContext;
 
+// TODO: more methods
 pub trait IntoError<E> {
     type Source;
 
