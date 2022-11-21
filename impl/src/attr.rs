@@ -30,7 +30,6 @@ pub struct AttrThisctx {
     pub visibility: Option<Visibility>,
     pub suffix: Option<Suffix>,
     pub unit: Option<bool>,
-    // TODO: support multi input
     pub attr: Vec<TokenStream>,
     pub into: Vec<Type>,
     pub generic: Option<bool>,

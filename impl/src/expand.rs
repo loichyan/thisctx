@@ -8,7 +8,32 @@ use quote::{format_ident, quote, ToTokens};
 use syn::{token, DeriveInput, Fields, Ident, Index, Result, Token, Type, Visibility};
 
 type GenericsAnalyzer<'a> = crate::generics::GenericsAnalyzer<'a, GenericBoundsContext>;
-type GenericBounds<'a> = crate::generics::GenericBounds<'a, GenericBoundsContext>;
+
+macro_rules! define_arg {
+    ($($name:ident,)*) => {
+        $(trait $name {
+            #[allow(non_upper_case_globals)]
+            const $name: bool;
+        })*
+    };
+}
+
+macro_rules! impl_arg {
+    ($name:ident($($arg:ident = $val:expr,)*)) => {
+        struct $name;
+        $(impl $arg for $name {
+            #[allow(non_upper_case_globals)]
+            const $arg: bool = $val;
+        })*
+
+    };
+}
+
+define_arg! {
+    IsDefinition,
+    SelectedOnly,
+    EmitDefault,
+}
 
 const DEFAULT_SUFFIX: &str = "Context";
 
@@ -207,8 +232,12 @@ impl<'a> Context<'a> {
                     );
                 field_ty = if generated {
                     // Generate a new type for conversion.
-                    // TODO: better generated name
-                    FieldType::Generated(format_ident!("__T{index}"), original_ty)
+                    let generated = if let FieldName::Named(name) = field_name {
+                        format_ident!("__{name}")
+                    } else {
+                        format_ident!("__field{index}")
+                    };
+                    FieldType::Generated(generated, original_ty)
                 } else {
                     FieldType::Original(original_ty)
                 };
@@ -231,14 +260,46 @@ impl<'a> Context<'a> {
         }
 
         // Generate quote wrappers.
-        let context_definition_generics =
-            QuoteContextDefinitionGenerics(&generics_analyzer, &fields_analyzer);
-        let context_generics = QuoteContextGenerics(&generics_analyzer, &fields_analyzer);
-        let context_fields = QuoteContextFields(&fields_analyzer);
-        let constructor_generics = QuoteConstructorGenerics(&generics_analyzer);
-        let constructor_fields = QuoteConstructorFeilds(&fields_analyzer);
-        let impl_generics = QuoteImplGenerics(&generics_analyzer, &fields_analyzer);
+        let context_definition_generics = {
+            impl_arg!(Arg(
+                IsDefinition = true,
+                SelectedOnly = true,
+                EmitDefault = true,
+            ));
+            Quote2Types(
+                QuoteAnalyzedGenerics(Arg, &generics_analyzer),
+                QuoteGeneratedGenerics(Arg, &fields_analyzer),
+            )
+        };
+        let context_generics = {
+            impl_arg!(Arg(
+                IsDefinition = false,
+                SelectedOnly = true,
+                EmitDefault = false,
+            ));
+            Quote2Types(
+                QuoteAnalyzedGenerics(Arg, &generics_analyzer),
+                QuoteGeneratedGenerics(Arg, &fields_analyzer),
+            )
+        };
+        let constructor_generics = {
+            impl_arg!(Arg(IsDefinition = false, SelectedOnly = false,));
+            QuoteAnalyzedGenerics(Arg, &generics_analyzer)
+        };
+        let impl_generics = {
+            impl_arg!(Arg(
+                IsDefinition = true,
+                SelectedOnly = false,
+                EmitDefault = false,
+            ));
+            Quote2Types(
+                QuoteAnalyzedGenerics(Arg, &generics_analyzer),
+                QuoteGeneratedGenerics(Arg, &fields_analyzer),
+            )
+        };
         let impl_bounds = QuoteImplBounds(&generics_analyzer, &fields_analyzer);
+        let context_fields = QuoteContextFields(&fields_analyzer);
+        let constructor_fields = QuoteConstructorFeilds(&fields_analyzer);
 
         // Surround fields.
         let context_definition_body = (
@@ -273,6 +334,7 @@ impl<'a> Context<'a> {
         let mut tokens = TokenStream::default();
         let context_attr = &self.options.attr;
         quote_extend!(&mut tokens=>
+            #[allow(non_camel_case_types)]
             #context_attr #context_vis
             struct #context_ty<#context_definition_generics>
             #context_definition_body
@@ -286,6 +348,7 @@ impl<'a> Context<'a> {
             // Generate `impl From for Error`.
             if source_ty.0.is_none() {
                 quote_extend!(&mut tokens=>
+                    #[allow(non_camel_case_types)]
                     impl<#impl_generics>
                     ::core::convert::From<#context_ty<#context_generics>>
                     for #error_ty
@@ -300,6 +363,7 @@ impl<'a> Context<'a> {
 
             // Generate definiton of context and impl `IntoError` for it.
             quote_extend!(&mut tokens=>
+                #[allow(non_camel_case_types)]
                 impl<#impl_generics> ::thisctx::IntoError<#error_ty>
                 for #context_ty<#context_generics>
                 where #impl_bounds {
@@ -373,17 +437,6 @@ impl Surround {
     }
 }
 
-struct QuoteImplGenerics<'a>(&'a GenericsAnalyzer<'a>, &'a FieldsAnalyzer<'a>);
-impl ToTokens for QuoteImplGenerics<'_> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        for (name, bounds) in self.0.bounds.iter() {
-            let definition = QuoteGenericDefinition(name, bounds);
-            quote_extend!(tokens=> #definition,);
-        }
-        QuoteGeneratedGenerics(self.1).to_tokens(tokens);
-    }
-}
-
 struct QuoteImplBounds<'a>(&'a GenericsAnalyzer<'a>, &'a FieldsAnalyzer<'a>);
 impl ToTokens for QuoteImplBounds<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -404,36 +457,14 @@ impl ToTokens for QuoteImplBounds<'_> {
     }
 }
 
-struct QuoteConstructorGenerics<'a>(&'a GenericsAnalyzer<'a>);
-impl ToTokens for QuoteConstructorGenerics<'_> {
+struct QuoteSourceType<'a>(Option<&'a Type>);
+impl ToTokens for QuoteSourceType<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        for (name, _) in self.0.bounds.iter() {
-            quote_extend!(tokens=> #name,);
+        if let Some(ty) = self.0 {
+            ty.to_tokens(tokens);
+        } else {
+            token::Paren::default().surround(tokens, |_| ());
         }
-    }
-}
-
-struct QuoteContextDefinitionGenerics<'a>(&'a GenericsAnalyzer<'a>, &'a FieldsAnalyzer<'a>);
-impl ToTokens for QuoteContextDefinitionGenerics<'_> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        QuoteSelectedGenericDefinitions(self.0).to_tokens(tokens);
-        for (_, info) in self.1 {
-            if let FieldType::Generated(ty, original) = &info.ty {
-                quote_extend!(tokens=> #ty = #original,);
-            }
-        }
-    }
-}
-
-struct QuoteContextGenerics<'a>(&'a GenericsAnalyzer<'a>, &'a FieldsAnalyzer<'a>);
-impl ToTokens for QuoteContextGenerics<'_> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        for (name, bounds) in self.0.bounds.iter() {
-            if bounds.context.selected {
-                quote_extend!(tokens=> #name,);
-            }
-        }
-        QuoteGeneratedGenerics(self.1).to_tokens(tokens);
     }
 }
 
@@ -478,37 +509,41 @@ impl ToTokens for QuoteConstructorFeilds<'_> {
     }
 }
 
-struct QuoteGeneratedGenerics<'a>(&'a FieldsAnalyzer<'a>);
-impl ToTokens for QuoteGeneratedGenerics<'_> {
+struct QuoteGeneratedGenerics<'a, A>(A, &'a FieldsAnalyzer<'a>);
+impl<A> ToTokens for QuoteGeneratedGenerics<'_, A>
+where
+    A: EmitDefault,
+{
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        for (_, info) in self.0 {
-            if let FieldType::Generated(ty, _) = &info.ty {
-                quote_extend!(tokens=> #ty,);
+        for (_, info) in self.1 {
+            if let FieldType::Generated(ty, original_ty) = &info.ty {
+                quote_extend!(tokens=> #ty);
+                if A::EmitDefault {
+                    quote_extend!(tokens=> = #original_ty);
+                }
+                quote_extend!(tokens=> ,);
             }
         }
     }
 }
 
-struct QuoteSelectedGenericDefinitions<'a>(&'a GenericsAnalyzer<'a>);
-impl ToTokens for QuoteSelectedGenericDefinitions<'_> {
+struct QuoteAnalyzedGenerics<'a, A>(A, &'a GenericsAnalyzer<'a>);
+impl<A> ToTokens for QuoteAnalyzedGenerics<'_, A>
+where
+    A: IsDefinition + SelectedOnly,
+{
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        for (name, bounds) in self.0.bounds.iter() {
-            if bounds.context.selected {
-                let definition = QuoteGenericDefinition(name, bounds);
-                quote_extend!(tokens=> #definition,);
+        for (name, bounds) in self.1.bounds.iter() {
+            if A::SelectedOnly && !bounds.context.selected {
+                continue;
             }
-        }
-    }
-}
-
-struct QuoteGenericDefinition<'a>(GenericName<'a>, &'a GenericBounds<'a>);
-impl ToTokens for QuoteGenericDefinition<'_> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let Self(name, bounds) = self;
-        if let Some(kst_ty) = bounds.const_ty {
-            quote_extend!(tokens=> const #name: #kst_ty);
-        } else {
-            quote_extend!(tokens=> #name);
+            if A::IsDefinition {
+                if let Some(kst_ty) = bounds.const_ty {
+                    quote_extend!(tokens=> const #name: #kst_ty,);
+                    continue;
+                }
+            }
+            quote_extend!(tokens=> #name,);
         }
     }
 }
@@ -527,6 +562,18 @@ impl<T: ToTokens> ToTokens for QuoteWithColon2<T> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let content = &self.0;
         quote_extend!(tokens=> ::#content);
+    }
+}
+
+struct Quote2Types<T1, T2>(T1, T2);
+impl<T1, T2> ToTokens for Quote2Types<T1, T2>
+where
+    T1: ToTokens,
+    T2: ToTokens,
+{
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.0.to_tokens(tokens);
+        self.1.to_tokens(tokens);
     }
 }
 
@@ -556,17 +603,6 @@ impl<T: ToTokens> ToTokens for QuoteSurround<T> {
             Surround::Brace => quote_extend!(tokens=> {#content}),
             Surround::Paren => quote_extend!(tokens=> (#content) #semi),
             Surround::None => semi.to_tokens(tokens),
-        }
-    }
-}
-
-struct QuoteSourceType<'a>(Option<&'a Type>);
-impl ToTokens for QuoteSourceType<'_> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        if let Some(ty) = self.0 {
-            ty.to_tokens(tokens);
-        } else {
-            token::Paren::default().surround(tokens, |_| ());
         }
     }
 }
