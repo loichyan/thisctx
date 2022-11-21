@@ -23,39 +23,38 @@
 
 pub use thisctx_impl::WithContext;
 
-pub trait IntoError {
-    type Error;
+pub trait IntoError<E> {
     type Source;
 
-    fn into_error(self, source: Self::Source) -> Self::Error;
+    fn into_error(self, source: Self::Source) -> E;
 }
 
 pub trait WithContext {
     type Ok;
     type Err;
 
-    fn context_with<C>(self, f: impl FnOnce() -> C) -> Result<Self::Ok, C::Error>
+    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<Self::Ok, E>
     where
-        C: IntoError<Source = Self::Err>;
+        C: IntoError<E, Source = Self::Err>;
 
     #[inline]
-    fn context<C>(self, context: C) -> Result<Self::Ok, C::Error>
+    fn context<E, C>(self, context: C) -> Result<Self::Ok, E>
     where
         Self: Sized,
-        C: IntoError<Source = Self::Err>,
+        C: IntoError<E, Source = Self::Err>,
     {
         self.context_with(|| context)
     }
 }
 
-impl<T, E> WithContext for Result<T, E> {
+impl<T, Err> WithContext for Result<T, Err> {
     type Ok = T;
-    type Err = E;
+    type Err = Err;
 
     #[inline]
-    fn context_with<C>(self, f: impl FnOnce() -> C) -> Result<T, C::Error>
+    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<T, E>
     where
-        C: IntoError<Source = E>,
+        C: IntoError<E, Source = Err>,
     {
         self.map_err(|e| f().into_error(e))
     }
@@ -66,9 +65,9 @@ impl<T> WithContext for Option<T> {
     type Err = ();
 
     #[inline]
-    fn context_with<C>(self, f: impl FnOnce() -> C) -> Result<T, C::Error>
+    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<T, E>
     where
-        C: IntoError<Source = ()>,
+        C: IntoError<E, Source = ()>,
     {
         self.ok_or_else(|| f().into_error(()))
     }
@@ -79,9 +78,9 @@ impl WithContext for bool {
     type Err = ();
 
     #[inline]
-    fn context_with<C>(self, f: impl FnOnce() -> C) -> Result<(), C::Error>
+    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<(), E>
     where
-        C: IntoError<Source = ()>,
+        C: IntoError<E, Source = ()>,
     {
         if self {
             Ok(())
@@ -96,9 +95,9 @@ impl WithContext for () {
     type Err = ();
 
     #[inline]
-    fn context_with<C>(self, f: impl FnOnce() -> C) -> Result<(), C::Error>
+    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<(), E>
     where
-        C: IntoError<Source = ()>,
+        C: IntoError<E, Source = ()>,
     {
         Err(f().into_error(()))
     }

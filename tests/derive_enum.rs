@@ -37,7 +37,7 @@ fn ok() -> Result<(), BoxError> {
 }
 
 #[test]
-fn with_context() {
+fn derive_enum() {
     ok().context(NamedWithSourceContext {
         context_1: "",
         context_2: 0,

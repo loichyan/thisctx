@@ -31,7 +31,7 @@ fn load_config(path: &Path) -> Result<String, Error> {
 - [x] Use derive macro instead.
 - [x] Add attributes to context types.
 - [x] Support transparent error.
-- [ ] Support generics.
+- [x] Support generics.
 
 ## ⚖️ License
 

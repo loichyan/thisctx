@@ -9,7 +9,7 @@ enum Error {
 }
 
 #[test]
-fn with_context() {
+fn unit() {
     true.context(NotUnitContext()).unwrap();
     true.context(UnitContext).unwrap();
 }

@@ -13,7 +13,7 @@ mod error {
 }
 
 #[test]
-fn with_context() {
+fn visibility() {
     true.context(error::PubVariantContext(0)).unwrap();
     true.context(error::PubCrateVariantContext(0)).unwrap();
 }

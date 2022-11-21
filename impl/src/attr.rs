@@ -21,7 +21,6 @@ pub struct Attrs<'a> {
     pub thisctx: AttrThisctx,
     pub source: Option<&'a Attribute>,
     pub error: Option<AttrError<'a>>,
-    pub is_source: bool,
 }
 
 #[derive(Default)]
@@ -30,7 +29,7 @@ pub struct AttrThisctx {
     pub suffix: Option<Suffix>,
     pub unit: Option<bool>,
     pub attr: Vec<TokenStream>,
-    pub into: Option<Type>,
+    pub into: Vec<Type>,
 }
 
 #[derive(Default)]
@@ -124,8 +123,8 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, attr: &Attribute) -> Result<
                 input.parse::<kw::attr>()?;
                 attrs.attr.extend(parse_thisctx_arg(input)?);
             } else if lookhead.peek(kw::into) {
-                check_dup!(into);
-                attrs.into = parse_thisctx_arg(input)?;
+                input.parse::<kw::into>()?;
+                attrs.into.extend(parse_thisctx_arg(input)?);
             } else {
                 return Err(lookhead.error());
             }

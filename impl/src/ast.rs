@@ -84,12 +84,7 @@ impl<'a> Variant<'a> {
 
 impl<'a> Field<'a> {
     fn from_syn_many(fields: &'a Fields) -> Result<Vec<Self>> {
-        let mut fields = fields
-            .iter()
-            .map(Field::from_syn)
-            .collect::<Result<Vec<_>>>()?;
-        find_source_field(&mut fields);
-        Ok(fields)
+        fields.iter().map(Field::from_syn).collect()
     }
 
     fn from_syn(node: &'a syn::Field) -> Result<Self> {
@@ -97,27 +92,5 @@ impl<'a> Field<'a> {
             original: node,
             attrs: attr::get(&node.attrs)?,
         })
-    }
-
-    pub fn is_source(&self) -> bool {
-        self.attrs.is_source
-    }
-}
-
-fn find_source_field(fields: &mut [Field]) {
-    for field in fields.iter_mut() {
-        if field.attrs.source.is_some() {
-            field.attrs.is_source = true;
-            return;
-        }
-    }
-    for field in fields.iter_mut() {
-        match &field.original.ident {
-            Some(ident) if ident == "source" => {
-                field.attrs.is_source = true;
-                return;
-            }
-            _ => (),
-        }
     }
 }

@@ -3,6 +3,7 @@
 mod ast;
 mod attr;
 mod expand;
+mod generics;
 
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
