@@ -57,7 +57,7 @@ enum Enum {
 struct Struct(String);
 
 #[test]
-fn enum_into() {
+fn attr_into() {
     let _: Error = Variant1Context("What").build();
     let _: Error2 = Variant1Context("is").build();
     let _: Error = Variant2Context("going").build();

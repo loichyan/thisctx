@@ -83,16 +83,17 @@ const DEFAULT_SUFFIX: &str = "Context";
 pub fn derive(node: &DeriveInput) -> Result<TokenStream> {
     let input = Input::from_syn(node)?;
     Ok(match input {
-        Input::Struct(input) => impl_struct(input).to_token_stream(),
+        Input::Struct(input) => impl_struct(input),
         Input::Enum(input) => impl_enum(input),
     })
 }
 
-pub fn impl_struct(input: Struct) -> Option<TokenStream> {
+pub fn impl_struct(input: Struct) -> TokenStream {
     if matches!(input.attrs.context(), Some(false)) || input.attrs.is_transparent() {
-        return None;
+        return TokenStream::default();
     }
-    Some(
+    input.attrs.with_module(
+        input.original,
         Context {
             input: input.original,
             variant: None,
@@ -101,37 +102,37 @@ pub fn impl_struct(input: Struct) -> Option<TokenStream> {
             ident: &input.original.ident,
             fields: &input.fields,
         }
-        .impl_all(),
+        .to_token_stream(),
     )
 }
 
 pub fn impl_enum(input: Enum) -> TokenStream {
-    input
-        .variants
-        .iter()
-        .flat_map(|variant| input.impl_variant(variant))
-        .collect()
+    let mut tokens = TokenStream::default();
+    for variant in input.variants.iter() {
+        input.impl_variant(variant, &mut tokens);
+    }
+    input.attrs.with_module(input.original, tokens)
 }
 
 impl<'a> Enum<'a> {
-    fn impl_variant(&self, input: &Variant) -> Option<TokenStream> {
+    fn impl_variant(&self, variant: &Variant, tokens: &mut TokenStream) {
         #[allow(clippy::or_fun_call)]
-        if matches!(input.attrs.context().or(self.attrs.context()), Some(false))
-            || input.attrs.is_transparent()
+        if matches!(
+            variant.attrs.context().or(self.attrs.context()),
+            Some(false)
+        ) || variant.attrs.is_transparent()
         {
-            return None;
+            return;
         }
-        Some(
-            Context {
-                input: self.original,
-                variant: Some(&input.original.ident),
-                surround: Surround::from_fields(&input.original.fields),
-                options: ContextOptions::from_attrs([&self.attrs, &input.attrs].into_iter()),
-                ident: &input.original.ident,
-                fields: &input.fields,
-            }
-            .impl_all(),
-        )
+        Context {
+            input: self.original,
+            variant: Some(&variant.original.ident),
+            surround: Surround::from_fields(&variant.original.fields),
+            options: ContextOptions::from_attrs([&self.attrs, &variant.attrs].into_iter()),
+            ident: &variant.original.ident,
+            fields: &variant.fields,
+        }
+        .to_tokens(tokens);
     }
 }
 
@@ -146,6 +147,21 @@ impl<'a> Attrs<'a> {
     fn context(&self) -> Option<bool> {
         self.thisctx.context
     }
+
+    fn with_module(&self, input: &DeriveInput, content: TokenStream) -> TokenStream {
+        if content.is_empty() {
+            return content;
+        }
+        let vis = self.thisctx.visibility.as_ref().unwrap_or(&input.vis);
+        if let Some(module) = self.thisctx.module.as_ref() {
+            quote!(#vis mod #module {
+                use super::*;
+                #content
+            })
+        } else {
+            content
+        }
+    }
 }
 
 struct Context<'a> {
@@ -155,6 +171,12 @@ struct Context<'a> {
     options: ContextOptions<'a>,
     ident: &'a Ident,
     fields: &'a [Field<'a>],
+}
+
+impl ToTokens for Context<'_> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.impl_all(tokens);
+    }
 }
 
 #[derive(Default)]
@@ -231,7 +253,7 @@ impl<'a> Context<'a> {
         self.fields.len()
     }
 
-    fn impl_all(self) -> TokenStream {
+    fn impl_all(&self, tokens: &mut TokenStream) {
         // Analyze feilds of contexts.
         let context_vis = self.options.visibility.unwrap_or(&self.input.vis);
         let mut source_field_index = self.find_source_field();
@@ -269,9 +291,9 @@ impl<'a> Context<'a> {
                 field_ty = if generated {
                     // Generate a new type for conversion.
                     let generated = if let FieldName::Named(name) = field_name {
-                        format_ident!("__{name}")
+                        format_ident!("__T{name}")
                     } else {
-                        format_ident!("__field{index}")
+                        format_ident!("__T{index}")
                     };
                     FieldType::Generated(generated, original_ty)
                 } else {
@@ -364,9 +386,8 @@ impl<'a> Context<'a> {
         let consturctor_path = quote!(#constructor_ident::<#constructor_generics>);
 
         // Generate context definition.
-        let mut tokens = TokenStream::default();
         let context_attr = &self.options.attr;
-        quote_extend!(&mut tokens=>
+        quote_extend!(tokens=>
             #[allow(non_camel_case_types)]
             #context_attr #context_vis
             struct #context_ident<#context_definition_generics>
@@ -388,7 +409,7 @@ impl<'a> Context<'a> {
         {
             let into_error = Quote2Types(t_into_error, QuoteLeadingColon2(QuoteGeneric(&error_ty)));
             // Generate `impl From for Error`.
-            quote_extend!(&mut tokens=>
+            quote_extend!(tokens=>
                 #[allow(non_camel_case_types)]
                 impl<#impl_generics> #into_error
                 for #context_ty
@@ -405,7 +426,7 @@ impl<'a> Context<'a> {
                 }
             );
             // Generate `impl IntoError for Context`.
-            quote_extend!(&mut tokens=>
+            quote_extend!(tokens=>
                 #[allow(non_camel_case_types)]
                 impl<#impl_generics>
                 #t_from::<#context_ty>
@@ -421,8 +442,6 @@ impl<'a> Context<'a> {
                 }
             );
         }
-
-        tokens
     }
 }
 

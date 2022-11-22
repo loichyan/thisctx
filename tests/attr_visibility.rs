@@ -13,7 +13,7 @@ mod error {
 }
 
 #[test]
-fn visibility() {
+fn attr_visibility() {
     error::PubVariantContext(0).build();
     error::PubCrateVariantContext(0).build();
 }

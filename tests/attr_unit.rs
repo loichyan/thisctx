@@ -9,7 +9,7 @@ enum Error {
 }
 
 #[test]
-fn unit() {
+fn attr_unit() {
     NotUnitContext().build();
     UnitContext.build();
 }

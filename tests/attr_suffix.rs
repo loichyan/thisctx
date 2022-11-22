@@ -12,7 +12,7 @@ enum Error {
 }
 
 #[test]
-fn suffix() {
+fn attr_suffix() {
     DefaultSuffixContext.build();
     NoSuffix.build();
     CustomSuffixThisctx.build();

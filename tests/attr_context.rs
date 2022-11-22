@@ -9,7 +9,7 @@ enum Error {
 }
 
 #[test]
-fn context() {
+fn attr_context() {
     let _ = GenerateContextContext;
     let _ = Error::NotGenerateContext;
 }

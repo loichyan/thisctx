@@ -16,6 +16,7 @@ mod kw {
     custom_keyword!(transparent);
     custom_keyword!(generic);
     custom_keyword!(context);
+    custom_keyword!(module);
 }
 
 #[derive(Default)]
@@ -34,6 +35,7 @@ pub struct AttrThisctx {
     pub into: Vec<Type>,
     pub generic: Option<bool>,
     pub context: Option<bool>,
+    pub module: Option<Ident>,
 }
 
 #[derive(Default)]
@@ -95,8 +97,8 @@ fn require_empty_attribute(attr: &Attribute) -> Result<()> {
     Ok(())
 }
 
-fn parse_thisctx_attribute(attrs: &mut AttrThisctx, attr: &Attribute) -> Result<()> {
-    attr.parse_args_with(|input: ParseStream| {
+fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Result<()> {
+    original.parse_args_with(|input: ParseStream| {
         macro_rules! check_dup {
             ($attr:ident) => {{
                 let kw = input.parse::<kw::$attr>()?;
@@ -135,6 +137,9 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, attr: &Attribute) -> Result<
             } else if lookhead.peek(kw::context) {
                 check_dup!(context);
                 attrs.context = parse_bool(input)?;
+            } else if lookhead.peek(kw::module) {
+                check_dup!(module);
+                attrs.module = parse_thisctx_arg(input)?;
             } else {
                 return Err(lookhead.error());
             }
