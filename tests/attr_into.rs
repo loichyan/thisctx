@@ -1,34 +1,56 @@
 use thisctx::{IntoError, WithContext};
-use thiserror::Error;
 
-#[derive(Debug, Error, WithContext)]
+#[derive(Debug, WithContext)]
 enum Error {
     #[error(transparent)]
-    FromEnum(#[from] Enum),
+    FromEnum(Enum),
     #[error(transparent)]
-    FromStruct(#[from] Struct),
+    FromStruct(Struct),
 }
 
-#[derive(Debug, Error, WithContext)]
+impl From<Enum> for Error {
+    fn from(t: Enum) -> Self {
+        Self::FromEnum(t)
+    }
+}
+
+impl From<Struct> for Error {
+    fn from(t: Struct) -> Self {
+        Self::FromStruct(t)
+    }
+}
+
+#[derive(Debug, WithContext)]
 enum Error2 {
     #[error(transparent)]
-    FromEnum(#[from] Enum),
+    FromEnum(Enum),
     #[error(transparent)]
-    FromStruct(#[from] Struct),
+    FromStruct(Struct),
 }
 
-#[derive(Debug, Error, WithContext)]
+impl From<Enum> for Error2 {
+    fn from(t: Enum) -> Self {
+        Self::FromEnum(t)
+    }
+}
+
+impl From<Struct> for Error2 {
+    fn from(t: Struct) -> Self {
+        Self::FromStruct(t)
+    }
+}
+
+#[derive(Debug, WithContext)]
 #[thisctx(into(Error))]
 enum Enum {
     #[error("{0}")]
     #[thisctx(into(Error2))]
     Variant1(String),
     #[error("{0}")]
-    #[thisctx(into(Error2))]
     Variant2(String),
 }
 
-#[derive(Debug, Error, WithContext)]
+#[derive(Debug, WithContext)]
 #[thisctx(into(Error))]
 #[thisctx(into(Error2))]
 #[error("{0}")]
@@ -39,7 +61,6 @@ fn enum_into() {
     let _: Error = Variant1Context("What").build();
     let _: Error2 = Variant1Context("is").build();
     let _: Error = Variant2Context("going").build();
-    let _: Error2 = Variant2Context("on").build();
-    let _: Error = StructContext("?").build();
-    let _: Error2 = StructContext("!").build();
+    let _: Error = StructContext("on").build();
+    let _: Error2 = StructContext("?").build();
 }

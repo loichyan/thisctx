@@ -8,7 +8,7 @@ mod generics;
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
 
-#[proc_macro_derive(WithContext, attributes(source, thisctx))]
+#[proc_macro_derive(WithContext, attributes(error, source, thisctx))]
 pub fn derive_with_context(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand::derive(&input)
