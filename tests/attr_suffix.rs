@@ -1,4 +1,4 @@
-use thisctx::WithContext;
+use thisctx::{IntoError, WithContext};
 
 #[derive(Debug, WithContext)]
 #[thisctx(suffix(true))]
@@ -13,7 +13,7 @@ enum Error {
 
 #[test]
 fn suffix() {
-    true.context(DefaultSuffixContext).unwrap();
-    true.context(NoSuffix).unwrap();
-    true.context(CustomSuffixThisctx).unwrap();
+    DefaultSuffixContext.build();
+    NoSuffix.build();
+    CustomSuffixThisctx.build();
 }

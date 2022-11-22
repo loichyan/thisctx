@@ -1,4 +1,4 @@
-use thisctx::WithContext;
+use thisctx::IntoError;
 
 mod error {
     use thisctx::WithContext;
@@ -14,6 +14,6 @@ mod error {
 
 #[test]
 fn visibility() {
-    true.context(error::PubVariantContext(0)).unwrap();
-    true.context(error::PubCrateVariantContext(0)).unwrap();
+    error::PubVariantContext(0).build();
+    error::PubCrateVariantContext(0).build();
 }

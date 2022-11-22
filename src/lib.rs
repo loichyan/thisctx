@@ -48,6 +48,7 @@ pub trait IntoError<E> {
     }
 }
 
+// TODO: must use?
 pub trait WithContext {
     type Ok;
     type Err;
@@ -89,35 +90,5 @@ impl<T> WithContext for Option<T> {
         C: IntoError<E, Source = ()>,
     {
         self.ok_or_else(|| f().into_error(()))
-    }
-}
-
-impl WithContext for bool {
-    type Ok = ();
-    type Err = ();
-
-    #[inline]
-    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<(), E>
-    where
-        C: IntoError<E, Source = ()>,
-    {
-        if self {
-            Ok(())
-        } else {
-            Err(f().into_error(()))
-        }
-    }
-}
-
-impl WithContext for () {
-    type Ok = ();
-    type Err = ();
-
-    #[inline]
-    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<(), E>
-    where
-        C: IntoError<E, Source = ()>,
-    {
-        Err(f().into_error(()))
     }
 }

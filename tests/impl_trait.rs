@@ -1,8 +1,6 @@
 use thisctx::{IntoError, WithContext};
-use thiserror::Error;
 
-#[derive(Debug, Eq, Error, PartialEq)]
-#[error("{0}")]
+#[derive(Debug, Eq, PartialEq)]
 struct HelloWorld(&'static str);
 
 impl Default for HelloWorld {

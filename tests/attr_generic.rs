@@ -12,5 +12,5 @@ enum Error {
 
 #[test]
 fn generic() {
-    let _ = NoGeneratedGenericOnFieldContext::<&str, &str>("what's", "going".to_string(), "on");
+    let _ = NoGeneratedGenericOnFieldContext::<&str, &str>("What's", "going".to_owned(), "on");
 }

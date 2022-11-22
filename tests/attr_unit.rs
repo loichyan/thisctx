@@ -1,4 +1,4 @@
-use thisctx::WithContext;
+use thisctx::{IntoError, WithContext};
 
 #[derive(Debug, WithContext)]
 #[thisctx(unit(true))]
@@ -10,6 +10,6 @@ enum Error {
 
 #[test]
 fn unit() {
-    true.context(NotUnitContext()).unwrap();
-    true.context(UnitContext).unwrap();
+    NotUnitContext().build();
+    UnitContext.build();
 }
