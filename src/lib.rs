@@ -24,11 +24,28 @@
 
 pub use thisctx_impl::WithContext;
 
-// TODO: more methods
 pub trait IntoError<E> {
     type Source;
 
     fn into_error(self, source: Self::Source) -> E;
+
+    #[inline]
+    fn build(self) -> E
+    where
+        Self: Sized,
+        Self::Source: Default,
+    {
+        self.into_error(<_>::default())
+    }
+
+    #[inline]
+    fn fail<T>(self) -> Result<T, E>
+    where
+        Self: Sized,
+        Self::Source: Default,
+    {
+        Err(self.build())
+    }
 }
 
 pub trait WithContext {

@@ -1,4 +1,4 @@
-use thisctx::WithContext;
+use thisctx::{IntoError, WithContext};
 use thiserror::Error;
 
 #[derive(Debug, Eq, Error, PartialEq)]
@@ -26,5 +26,17 @@ fn from_context() {
     assert_eq!(
         Error::from(SourceImplDefautContext),
         Error::SourceImplDefaut(HelloWorld("Hello, world!")),
+    );
+}
+
+#[test]
+fn into_error() {
+    assert_eq!(
+        SourceImplDefautContext.build(),
+        Error::SourceImplDefaut(HelloWorld("Hello, world!")),
+    );
+    assert_eq!(
+        SourceImplDefautContext.fail::<()>(),
+        Err(Error::SourceImplDefaut(HelloWorld("Hello, world!"))),
     );
 }
