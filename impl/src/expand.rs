@@ -5,9 +5,27 @@ use crate::{
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
-use syn::{token, DeriveInput, Fields, Ident, Index, Result, Token, Type, Visibility};
+use syn::{DeriveInput, Fields, Ident, Index, Result, Token, Type, Visibility};
 
-type GenericsAnalyzer<'a> = crate::generics::GenericsAnalyzer<'a, GenericBoundsContext>;
+macro_rules! quote_extend {
+    ($tokens:expr=> $($tt:tt)*) => {{
+        let mut _s = &mut *$tokens;
+        ::quote::quote_each_token!(_s $($tt)*);
+    }};
+}
+
+macro_rules! new_type_quote {
+    ($name:ident=> $($tt:tt)*) => {
+        #[allow(non_camel_case_types)]
+        struct $name;
+        impl ToTokens for $name {
+            #[inline]
+            fn to_tokens(&self, tokens: &mut ::proc_macro2::TokenStream) {
+                quote_extend!(tokens=> $($tt)*);
+            }
+        }
+    };
+}
 
 macro_rules! define_arg {
     ($($name:ident,)*) => {
@@ -30,19 +48,25 @@ macro_rules! impl_arg {
 }
 
 define_arg! {
-    IsDefinition,
-    SelectedOnly,
+    EmitDefinition,
+    EmitSelectedOnly,
     EmitDefault,
+    EmitTrailingSemi,
 }
+
+impl_arg!(WithoutTrailingSemi(EmitTrailingSemi = false,));
+impl_arg!(WithTrailingSemi(EmitTrailingSemi = true,));
+
+new_type_quote!(ty_none_source=> ());
+new_type_quote!(i_source_var=> source);
+new_type_quote!(t_from=> ::core::convert::From);
+new_type_quote!(t_into=> ::core::convert::Into);
+new_type_quote!(t_into_error=> ::thisctx::IntoError);
+new_type_quote!(t_default=> ::core::default::Default);
+
+type GenericsAnalyzer<'a> = crate::generics::GenericsAnalyzer<'a, GenericBoundsContext>;
 
 const DEFAULT_SUFFIX: &str = "Context";
-
-macro_rules! quote_extend {
-    ($tokens:expr=> $($tt:tt)*) => {{
-        let mut _s = &mut *$tokens;
-        ::quote::quote_each_token!(_s $($tt)*);
-    }};
-}
 
 pub fn derive(node: &DeriveInput) -> Result<TokenStream> {
     let input = Input::from_syn(node)?;
@@ -262,8 +286,8 @@ impl<'a> Context<'a> {
         // Generate quote wrappers.
         let context_definition_generics = {
             impl_arg!(Arg(
-                IsDefinition = true,
-                SelectedOnly = true,
+                EmitDefinition = true,
+                EmitSelectedOnly = true,
                 EmitDefault = true,
             ));
             Quote2Types(
@@ -273,8 +297,8 @@ impl<'a> Context<'a> {
         };
         let context_generics = {
             impl_arg!(Arg(
-                IsDefinition = false,
-                SelectedOnly = true,
+                EmitDefinition = false,
+                EmitSelectedOnly = true,
                 EmitDefault = false,
             ));
             Quote2Types(
@@ -283,13 +307,13 @@ impl<'a> Context<'a> {
             )
         };
         let constructor_generics = {
-            impl_arg!(Arg(IsDefinition = false, SelectedOnly = false,));
+            impl_arg!(Arg(EmitDefinition = false, EmitSelectedOnly = false,));
             QuoteAnalyzedGenerics(Arg, &generics_analyzer)
         };
         let impl_generics = {
             impl_arg!(Arg(
-                IsDefinition = true,
-                SelectedOnly = false,
+                EmitDefinition = true,
+                EmitSelectedOnly = false,
                 EmitDefault = false,
             ));
             Quote2Types(
@@ -302,19 +326,16 @@ impl<'a> Context<'a> {
         let constructor_fields = QuoteConstructorFeilds(&fields_analyzer);
 
         // Surround fields.
-        let context_definition_body = (
-            // Generate a unit body;
-            if index == 0 && !matches!(self.options.unit, Some(false)) {
-                Surround::None
-            } else {
-                self.surround
-            }
-        )
-        .quote(context_fields, true);
-        let constructor_body = self.surround.quote(constructor_fields, false);
+        let context_definition_body = if index == 0 && !matches!(self.options.unit, Some(false)) {
+            Surround::None
+        } else {
+            self.surround
+        }
+        .quote(WithTrailingSemi, context_fields);
+        let constructor_body = self.surround.quote(WithoutTrailingSemi, constructor_fields);
 
         // Generate type of context.
-        let context_ty = {
+        let context_ident = {
             let ident = self.ident;
             let span = self.ident.span();
             match self.options.suffix {
@@ -336,45 +357,57 @@ impl<'a> Context<'a> {
         quote_extend!(&mut tokens=>
             #[allow(non_camel_case_types)]
             #context_attr #context_vis
-            struct #context_ty<#context_definition_generics>
+            struct #context_ident<#context_definition_generics>
             #context_definition_body
         );
 
+        // Generate context type.
+        let context_ty = Quote2Types(
+            &context_ident,
+            Surround::AngleBracket.quote(WithoutTrailingSemi, &context_generics),
+        );
+
+        // Create useful quote types.
         let source_ty = QuoteSourceType(source_ty);
         let constructor_type_variant = self.variant.map(QuoteWithColon2);
-        for error_ty in std::iter::once(QuoteMultiTypes::Variant2(consturctor_path))
-            .chain(self.options.into.iter().map(QuoteMultiTypes::Variant1))
-        {
-            // Generate `impl From for Error`.
-            if source_ty.0.is_none() {
-                quote_extend!(&mut tokens=>
-                    #[allow(non_camel_case_types)]
-                    impl<#impl_generics>
-                    ::core::convert::From<#context_ty<#context_generics>>
-                    for #error_ty
-                    where #impl_bounds {
-                        #[inline]
-                        fn from(context: #context_ty<#context_generics>) -> Self {
-                            ::thisctx::IntoError::into_error(context, ())
-                        }
-                    }
-                );
-            }
 
-            // Generate definiton of context and impl `IntoError` for it.
+        for error_ty in std::iter::once(Quote2Variants::Variant2(consturctor_path))
+            .chain(self.options.into.iter().map(Quote2Variants::Variant1))
+        {
+            let into_error = Quote2Types(
+                t_into_error,
+                QuoteWithColon2(Surround::AngleBracket.quote(WithoutTrailingSemi, &error_ty)),
+            );
+            // Generate `impl From for Error`.
             quote_extend!(&mut tokens=>
                 #[allow(non_camel_case_types)]
-                impl<#impl_generics> ::thisctx::IntoError<#error_ty>
-                for #context_ty<#context_generics>
+                impl<#impl_generics> #into_error
+                for #context_ty
                 where #impl_bounds {
                     type Source = #source_ty;
 
                     #[inline]
-                    fn into_error(self, source: #source_ty) -> #error_ty {
-                        ::core::convert::From::from(
+                    fn into_error(self, #i_source_var: #source_ty) -> #error_ty {
+                        #t_from::from(
                             #constructor_ident #constructor_type_variant
                             #constructor_body
                         )
+                    }
+                }
+            );
+            // Generate `impl IntoError for Context`.
+            quote_extend!(&mut tokens=>
+                #[allow(non_camel_case_types)]
+                impl<#impl_generics>
+                #t_from::<#context_ty>
+                for #error_ty
+                where #impl_bounds
+                    #context_ty: #into_error,
+                    <#context_ty as #into_error>::Source: #t_default,
+                {
+                    #[inline]
+                    fn from(context: #context_ty) -> Self {
+                        #into_error::into_error(context, #t_default::default())
                     }
                 }
             );
@@ -416,6 +449,7 @@ enum FieldType<'a> {
 enum Surround {
     Paren,
     Brace,
+    AngleBracket,
     None,
 }
 
@@ -428,11 +462,11 @@ impl Surround {
         }
     }
 
-    fn quote<T>(&self, content: T, semi: bool) -> QuoteSurround<T> {
+    fn quote<A, T>(&self, arg: A, content: T) -> QuoteSurround<A, T> {
         QuoteSurround {
+            arg,
             surround: *self,
             content,
-            semi: if semi { Some(<_>::default()) } else { None },
         }
     }
 }
@@ -451,7 +485,7 @@ impl ToTokens for QuoteImplBounds<'_> {
         }
         for (_, info) in self.1.iter() {
             if let FieldType::Generated(ty, original) = &info.ty {
-                quote_extend!(tokens=> #ty: ::core::convert::Into<#original>,);
+                quote_extend!(tokens=> #ty: #t_into::<#original>,);
             }
         }
     }
@@ -463,7 +497,7 @@ impl ToTokens for QuoteSourceType<'_> {
         if let Some(ty) = self.0 {
             ty.to_tokens(tokens);
         } else {
-            token::Paren::default().surround(tokens, |_| ());
+            quote_extend!(tokens=> #ty_none_source);
         }
     }
 }
@@ -500,9 +534,9 @@ impl ToTokens for QuoteConstructorFeilds<'_> {
             match &info.ty {
                 FieldType::Original(_) => quote_extend!(tokens=> self.#name),
                 FieldType::Generated(..) => {
-                    quote_extend!(tokens=> ::core::convert::Into::into(self.#name));
+                    quote_extend!(tokens=> #t_into::into(self.#name));
                 }
-                FieldType::Source => quote_extend!(tokens=> source),
+                FieldType::Source => quote_extend!(tokens=> #i_source_var),
             }
             quote_extend!(tokens=> ,);
         }
@@ -530,14 +564,14 @@ where
 struct QuoteAnalyzedGenerics<'a, A>(A, &'a GenericsAnalyzer<'a>);
 impl<A> ToTokens for QuoteAnalyzedGenerics<'_, A>
 where
-    A: IsDefinition + SelectedOnly,
+    A: EmitDefinition + EmitSelectedOnly,
 {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         for (name, bounds) in self.1.bounds.iter() {
-            if A::SelectedOnly && !bounds.context.selected {
+            if A::EmitSelectedOnly && !bounds.context.selected {
                 continue;
             }
-            if A::IsDefinition {
+            if A::EmitDefinition {
                 if let Some(kst_ty) = bounds.const_ty {
                     quote_extend!(tokens=> const #name: #kst_ty,);
                     continue;
@@ -577,31 +611,41 @@ where
     }
 }
 
-enum QuoteMultiTypes<T1 = TokenStream, T2 = TokenStream> {
+enum Quote2Variants<T1 = TokenStream, T2 = TokenStream> {
     Variant1(T1),
     Variant2(T2),
 }
-impl<T1: ToTokens, T2: ToTokens> ToTokens for QuoteMultiTypes<T1, T2> {
+impl<T1: ToTokens, T2: ToTokens> ToTokens for Quote2Variants<T1, T2> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
-            QuoteMultiTypes::Variant1(t) => t.to_tokens(tokens),
-            QuoteMultiTypes::Variant2(t) => t.to_tokens(tokens),
+            Quote2Variants::Variant1(t) => t.to_tokens(tokens),
+            Quote2Variants::Variant2(t) => t.to_tokens(tokens),
         }
     }
 }
 
-struct QuoteSurround<T> {
+struct QuoteSurround<A, T> {
+    #[allow(dead_code)]
+    arg: A,
     surround: Surround,
     content: T,
-    semi: Option<Token![;]>,
 }
-impl<T: ToTokens> ToTokens for QuoteSurround<T> {
+impl<A, T> ToTokens for QuoteSurround<A, T>
+where
+    A: EmitTrailingSemi,
+    T: ToTokens,
+{
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let content = &self.content;
-        let semi = &self.semi;
+        let semi = if A::EmitTrailingSemi {
+            Some(<Token![;]>::default())
+        } else {
+            None
+        };
         match self.surround {
             Surround::Brace => quote_extend!(tokens=> {#content}),
             Surround::Paren => quote_extend!(tokens=> (#content) #semi),
+            Surround::AngleBracket => quote_extend!(tokens=> <#content>),
             Surround::None => semi.to_tokens(tokens),
         }
     }

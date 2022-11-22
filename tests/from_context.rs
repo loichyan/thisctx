@@ -1,16 +1,30 @@
-use thisctx::{IntoError, WithContext};
+use thisctx::WithContext;
+use thiserror::Error;
 
-#[derive(Debug, WithContext)]
-enum Error {
-    ErrorFromContext(String),
-    IntoError(#[source] String),
+#[derive(Debug, Eq, Error, PartialEq)]
+#[error("{0}")]
+struct HelloWorld(&'static str);
+
+impl Default for HelloWorld {
+    fn default() -> Self {
+        Self("Hello, world!")
+    }
 }
 
-fn requires_error(_: Error) {}
+#[derive(Debug, Eq, PartialEq, WithContext)]
+enum Error {
+    NoneSource(&'static str),
+    SourceImplDefaut(#[source] HelloWorld),
+}
 
 #[test]
 fn from_context() {
-    requires_error(ErrorFromContextContext("").into());
-    requires_error(ErrorFromContextContext("").into_error(()));
-    requires_error(IntoErrorContext.into_error("".to_owned()));
+    assert_eq!(
+        Error::from(NoneSourceContext("Hello, thisctx!")),
+        Error::NoneSource("Hello, thisctx!"),
+    );
+    assert_eq!(
+        Error::from(SourceImplDefautContext),
+        Error::SourceImplDefaut(HelloWorld("Hello, world!")),
+    );
 }
