@@ -25,6 +25,16 @@ macro_rules! new_type_quote {
             }
         }
     };
+    ($name:ident($($var:ident: $ty:ident),*)=> $($tt:tt)*) => {
+        struct $name<$($ty: ToTokens),*>($($ty),*);
+        impl <$($ty: ToTokens),*> ToTokens for $name<$($ty),*> {
+            #[inline]
+            fn to_tokens(&self, tokens: &mut ::proc_macro2::TokenStream) {
+                let Self($($var,)*) = self;
+                quote_extend!(tokens=> $($tt)*);
+            }
+        }
+    };
 }
 
 macro_rules! define_arg {
@@ -63,6 +73,8 @@ new_type_quote!(t_from=> ::core::convert::From);
 new_type_quote!(t_into=> ::core::convert::Into);
 new_type_quote!(t_into_error=> ::thisctx::IntoError);
 new_type_quote!(t_default=> ::core::default::Default);
+new_type_quote!(QuoteLeadingColon2(a:T1)=> ::#a);
+new_type_quote!(QuoteGeneric(a:T1)=> <#a>);
 
 type GenericsAnalyzer<'a> = crate::generics::GenericsAnalyzer<'a, GenericBoundsContext>;
 
@@ -364,20 +376,17 @@ impl<'a> Context<'a> {
         // Generate context type.
         let context_ty = Quote2Types(
             &context_ident,
-            Surround::AngleBracket.quote(WithoutTrailingSemi, &context_generics),
+            QuoteLeadingColon2(QuoteGeneric(&context_generics)),
         );
 
         // Create useful quote types.
         let source_ty = QuoteSourceType(source_ty);
-        let constructor_type_variant = self.variant.map(QuoteWithColon2);
+        let constructor_type_variant = self.variant.map(QuoteLeadingColon2);
 
         for error_ty in std::iter::once(Quote2Variants::Variant2(consturctor_path))
             .chain(self.options.into.iter().map(Quote2Variants::Variant1))
         {
-            let into_error = Quote2Types(
-                t_into_error,
-                QuoteWithColon2(Surround::AngleBracket.quote(WithoutTrailingSemi, &error_ty)),
-            );
+            let into_error = Quote2Types(t_into_error, QuoteLeadingColon2(QuoteGeneric(&error_ty)));
             // Generate `impl From for Error`.
             quote_extend!(&mut tokens=>
                 #[allow(non_camel_case_types)]
@@ -449,7 +458,6 @@ enum FieldType<'a> {
 enum Surround {
     Paren,
     Brace,
-    AngleBracket,
     None,
 }
 
@@ -591,14 +599,6 @@ impl ToTokens for QuoteAttrs<'_> {
     }
 }
 
-struct QuoteWithColon2<T>(T);
-impl<T: ToTokens> ToTokens for QuoteWithColon2<T> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let content = &self.0;
-        quote_extend!(tokens=> ::#content);
-    }
-}
-
 struct Quote2Types<T1, T2>(T1, T2);
 impl<T1, T2> ToTokens for Quote2Types<T1, T2>
 where
@@ -645,7 +645,6 @@ where
         match self.surround {
             Surround::Brace => quote_extend!(tokens=> {#content}),
             Surround::Paren => quote_extend!(tokens=> (#content) #semi),
-            Surround::AngleBracket => quote_extend!(tokens=> <#content>),
             Surround::None => semi.to_tokens(tokens),
         }
     }
