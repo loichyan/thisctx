@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use syn::{
     parenthesized,
     parse::{Nothing, Parse, ParseStream},
-    token, Attribute, Error, Ident, LitBool, Result, Token, Type, Visibility,
+    token, Attribute, Error, Ident, LitBool, LitStr, Result, Token, Type, Visibility,
 };
 
 mod kw {
@@ -156,15 +156,18 @@ fn parse_bool(input: ParseStream) -> Result<Option<bool>> {
     Ok(parse_thisctx_arg::<LitBool>(input)?.map(|flag| flag.value))
 }
 
-// TODO: support `attr("...")` and `attr = ...`
 fn parse_thisctx_arg<T: Parse>(input: ParseStream) -> Result<Option<T>> {
-    Ok(if input.peek(token::Paren) {
+    if input.peek(token::Paren) {
         let content;
         parenthesized!(content in input);
-        Some(content.parse()?)
+        content.parse().map(Some)
+    } else if input.peek(Token![=]) {
+        input.parse::<Token![=]>()?;
+        let s = input.parse::<LitStr>()?;
+        s.parse().map(Some)
     } else {
-        None
-    })
+        Ok(None)
+    }
 }
 
 fn parse_error_attribute(attr: &Attribute) -> Result<AttrError> {
