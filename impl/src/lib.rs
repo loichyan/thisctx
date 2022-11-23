@@ -1,4 +1,14 @@
 //! Macro implementation of the [thisctx](https://crates.io/crates/thisctx) crate.
+extern crate proc_macro;
+
+macro_rules! matches {
+    ($expr:expr, $pat:pat $(,)?) => {
+        match $expr {
+            $pat => true,
+            _ => false,
+        }
+    };
+}
 
 mod ast;
 mod attr;

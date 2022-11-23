@@ -1,4 +1,4 @@
-use thisctx::WithContext;
+use ::thisctx::WithContext;
 
 #[derive(WithContext)]
 #[thisctx(attr(doc = "I'm on Line#2\n\n"))]

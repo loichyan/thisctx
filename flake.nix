@@ -19,17 +19,23 @@
         mkShell = pkgs.mkShell.override { stdenv = llvmPkgs.stdenv; };
       in
       {
-        devShells.default = mkShell (with pkgs; {
-          nativeBuildInputs = [
-            (rust-bin.stable.latest.default.override {
-              extensions = [ "rust-src" ];
-            })
-            llvmPkgs.bintools
-          ];
-          NIX_CFLAGS_LINK = "-fuse-ld=lld";
-          RUSTFLAGS = [ "-Clinker=clang" "-Clink-arg=-fuse-ld=lld" ];
-        });
+        devShells = with pkgs; {
+          default = mkShell {
+            nativeBuildInputs = [
+              (rust-bin.stable.latest.default.override {
+                extensions = [ "rust-src" ];
+              })
+              llvmPkgs.bintools
+            ];
+            NIX_CFLAGS_LINK = "-fuse-ld=lld";
+            RUSTFLAGS = [ "-Clinker=clang" "-Clink-arg=-fuse-ld=lld" ];
+          };
+          msrv = mkShell {
+            nativeBuildInputs = [
+              (pkgs.rust-bin.stable."1.34.0".minimal)
+            ];
+          };
+        };
       }
-    )
-  ;
+    );
 }

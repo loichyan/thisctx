@@ -98,7 +98,7 @@ pub fn impl_struct(input: Struct) -> TokenStream {
             input: input.original,
             variant: None,
             surround: Surround::from_fields(&input.data.fields),
-            options: ContextOptions::from_attrs([&input.attrs].into_iter()),
+            options: ContextOptions::from_attrs([&input.attrs].iter().map(|x| *x)),
             ident: &input.original.ident,
             fields: &input.fields,
         }
@@ -115,8 +115,8 @@ pub fn impl_enum(input: Enum) -> TokenStream {
 }
 
 impl<'a> Enum<'a> {
+    #[allow(clippy::or_fun_call)]
     fn impl_variant(&self, variant: &Variant, tokens: &mut TokenStream) {
-        #[allow(clippy::or_fun_call)]
         if matches!(
             variant.attrs.context().or(self.attrs.context()),
             Some(false)
@@ -128,7 +128,7 @@ impl<'a> Enum<'a> {
             input: self.original,
             variant: Some(&variant.original.ident),
             surround: Surround::from_fields(&variant.original.fields),
-            options: ContextOptions::from_attrs([&self.attrs, &variant.attrs].into_iter()),
+            options: ContextOptions::from_attrs([&self.attrs, &variant.attrs].iter().map(|x| *x)),
             ident: &variant.original.ident,
             fields: &variant.fields,
         }
@@ -291,9 +291,9 @@ impl<'a> Context<'a> {
                 field_ty = if generated {
                     // Generate a new type for conversion.
                     let generated = if let FieldName::Named(name) = field_name {
-                        format_ident!("__T{name}")
+                        format_ident!("__T{}", name)
                     } else {
-                        format_ident!("__T{index}")
+                        format_ident!("__T{}", index)
                     };
                     FieldType::Generated(generated, original_ty)
                 } else {
@@ -374,16 +374,12 @@ impl<'a> Context<'a> {
             let span = self.ident.span();
             match self.options.suffix {
                 Some(Suffix::Flag(true)) | None => {
-                    format_ident!("{ident}{DEFAULT_SUFFIX}", span = span)
+                    format_ident!("{}{}", ident, DEFAULT_SUFFIX, span = span)
                 }
-                Some(Suffix::Ident(suffix)) => format_ident!("{ident}{suffix}", span = span),
+                Some(Suffix::Ident(suffix)) => format_ident!("{}{}", ident, suffix, span = span),
                 Some(Suffix::Flag(false)) => self.ident.clone(),
             }
         };
-
-        // Generate consturctor path.
-        let constructor_ident = &self.input.ident;
-        let consturctor_path = quote!(#constructor_ident::<#constructor_generics>);
 
         // Generate context definition.
         let context_attr = &self.options.attr;
@@ -395,23 +391,22 @@ impl<'a> Context<'a> {
         );
 
         // Generate context type.
-        let context_ty = Quote2Types(
-            &context_ident,
-            QuoteLeadingColon2(QuoteGeneric(&context_generics)),
-        );
+        let context_ty = Quote2Types(&context_ident, QuoteGeneric(&context_generics));
 
         // Create useful quote types.
+        let constructor_ident = &self.input.ident;
+        let constructor_ty = Quote2Types(&constructor_ident, QuoteGeneric(&constructor_generics));
+        let constructor_ty_variant = self.variant.map(QuoteLeadingColon2);
         let source_ty = QuoteSourceType(source_ty);
-        let constructor_type_variant = self.variant.map(QuoteLeadingColon2);
 
-        for error_ty in std::iter::once(Quote2Variants::Variant2(consturctor_path))
+        for error_ty in std::iter::once(Quote2Variants::Variant2(constructor_ty))
             .chain(self.options.into.iter().map(Quote2Variants::Variant1))
         {
-            let into_error = Quote2Types(t_into_error, QuoteLeadingColon2(QuoteGeneric(&error_ty)));
+            let into_error_ty = Quote2Types(t_into_error, QuoteGeneric(&error_ty));
             // Generate `impl From for Error`.
             quote_extend!(tokens=>
                 #[allow(non_camel_case_types)]
-                impl<#impl_generics> #into_error
+                impl<#impl_generics> #into_error_ty
                 for #context_ty
                 where #impl_bounds {
                     type Source = #source_ty;
@@ -419,8 +414,7 @@ impl<'a> Context<'a> {
                     #[inline]
                     fn into_error(self, #i_source_var: #source_ty) -> #error_ty {
                         #t_from::from(
-                            #constructor_ident #constructor_type_variant
-                            #constructor_body
+                            #constructor_ident #constructor_ty_variant #constructor_body
                         )
                     }
                 }
@@ -429,15 +423,15 @@ impl<'a> Context<'a> {
             quote_extend!(tokens=>
                 #[allow(non_camel_case_types)]
                 impl<#impl_generics>
-                #t_from::<#context_ty>
+                #t_from<#context_ty>
                 for #error_ty
                 where #impl_bounds
-                    #context_ty: #into_error,
-                    <#context_ty as #into_error>::Source: #t_default,
+                    #context_ty: #into_error_ty,
+                    <#context_ty as #into_error_ty>::Source: #t_default,
                 {
                     #[inline]
                     fn from(context: #context_ty) -> Self {
-                        #into_error::into_error(context, #t_default::default())
+                        #t_into_error::into_error(context, #t_default::default())
                     }
                 }
             );
@@ -455,8 +449,8 @@ enum FieldName<'a> {
 impl ToTokens for FieldName<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
-            Self::Named(t) => t.to_tokens(tokens),
-            Self::Unnamed(t) => t.to_tokens(tokens),
+            FieldName::Named(t) => t.to_tokens(tokens),
+            FieldName::Unnamed(t) => t.to_tokens(tokens),
         }
     }
 }
@@ -483,9 +477,9 @@ enum Surround {
 impl Surround {
     fn from_fields(fields: &Fields) -> Self {
         match fields {
-            Fields::Named(_) => Self::Brace,
-            Fields::Unnamed(_) => Self::Paren,
-            Fields::Unit => Self::None,
+            Fields::Named(_) => Surround::Brace,
+            Fields::Unnamed(_) => Surround::Paren,
+            Fields::Unit => Surround::None,
         }
     }
 
@@ -672,8 +666,8 @@ where
 impl ToTokens for GenericName<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
-            Self::Ident(t) => t.to_tokens(tokens),
-            Self::Lifetime(t) => t.to_tokens(tokens),
+            GenericName::Ident(t) => t.to_tokens(tokens),
+            GenericName::Lifetime(t) => t.to_tokens(tokens),
         }
     }
 }
@@ -681,8 +675,8 @@ impl ToTokens for GenericName<'_> {
 impl ToTokens for TypeParamBound<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
-            Self::Trait(t) => t.to_tokens(tokens),
-            Self::Lifetime(t) => t.to_tokens(tokens),
+            TypeParamBound::Trait(t) => t.to_tokens(tokens),
+            TypeParamBound::Lifetime(t) => t.to_tokens(tokens),
         }
     }
 }

@@ -156,6 +156,7 @@ fn parse_bool(input: ParseStream) -> Result<Option<bool>> {
     Ok(parse_thisctx_arg::<LitBool>(input)?.map(|flag| flag.value))
 }
 
+// TODO: support `attr("...")` and `attr = ...`
 fn parse_thisctx_arg<T: Parse>(input: ParseStream) -> Result<Option<T>> {
     Ok(if input.peek(token::Paren) {
         let content;

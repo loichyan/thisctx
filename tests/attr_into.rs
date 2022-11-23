@@ -10,13 +10,13 @@ enum Error {
 
 impl From<Enum> for Error {
     fn from(t: Enum) -> Self {
-        Self::FromEnum(t)
+        Error::FromEnum(t)
     }
 }
 
 impl From<Struct> for Error {
     fn from(t: Struct) -> Self {
-        Self::FromStruct(t)
+        Error::FromStruct(t)
     }
 }
 
@@ -30,13 +30,13 @@ enum Error2 {
 
 impl From<Enum> for Error2 {
     fn from(t: Enum) -> Self {
-        Self::FromEnum(t)
+        Error2::FromEnum(t)
     }
 }
 
 impl From<Struct> for Error2 {
     fn from(t: Struct) -> Self {
-        Self::FromStruct(t)
+        Error2::FromStruct(t)
     }
 }
 

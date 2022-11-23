@@ -40,13 +40,13 @@ pub enum GenericName<'a> {
 
 impl<'a> From<&'a Ident> for GenericName<'a> {
     fn from(t: &'a Ident) -> Self {
-        Self::Ident(t)
+        GenericName::Ident(t)
     }
 }
 
 impl<'a> From<&'a Lifetime> for GenericName<'a> {
     fn from(t: &'a Lifetime) -> Self {
-        Self::Lifetime(t)
+        GenericName::Lifetime(t)
     }
 }
 
@@ -65,21 +65,21 @@ pub enum TypeParamBound<'a> {
 
 impl<'a> From<&'a TraitBound> for TypeParamBound<'a> {
     fn from(t: &'a TraitBound) -> Self {
-        Self::Trait(t)
+        TypeParamBound::Trait(t)
     }
 }
 
 impl<'a> From<&'a Lifetime> for TypeParamBound<'a> {
     fn from(t: &'a Lifetime) -> Self {
-        Self::Lifetime(t)
+        TypeParamBound::Lifetime(t)
     }
 }
 
 impl<'a> From<&'a syn::TypeParamBound> for TypeParamBound<'a> {
     fn from(t: &'a syn::TypeParamBound) -> Self {
         match t {
-            syn::TypeParamBound::Trait(t) => Self::Trait(t),
-            syn::TypeParamBound::Lifetime(t) => Self::Lifetime(t),
+            syn::TypeParamBound::Trait(t) => TypeParamBound::Trait(t),
+            syn::TypeParamBound::Lifetime(t) => TypeParamBound::Lifetime(t),
         }
     }
 }
@@ -297,13 +297,12 @@ impl<'a, C> GenericsMap<'a, C> {
     where
         N: Into<GenericName<'a>>,
     {
-        self.indices
-            .get(&name.into())
-            .map(|index| {
-                self.entries
-                    .get_mut(*index)
-                    .unwrap_or_else(|| unreachable!())
-            })
-            .map(|(name, bounds)| (*name, bounds))
+        if let Some(index) = self.indices.get(&name.into()) {
+            self.entries
+                .get_mut(*index)
+                .map(|(name, bounds)| (*name, bounds))
+        } else {
+            None
+        }
     }
 }

@@ -27,12 +27,17 @@ fn load_config(path: &Path) -> Result<String, Error> {
 
 ## 📝 Todo
 
-- [x] Switch to Rust 2021.
+- [x] ~~Switch to Rust 2021.~~
+- [x] MSRV v1.34
 - [x] Use derive macro instead.
 - [x] Add attributes to context types.
 - [x] Support transparent error.
 - [x] Support generics.
 - [ ] More documentation.
+
+## 🚩 Minimal suppoted Rust version
+
+This crate may not compile with versions before `v1.34.0`.
 
 ## ⚖️ License
 
