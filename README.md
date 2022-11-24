@@ -13,7 +13,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error, WithContext)]
 pub enum Error {
-    #[error("I/O failed '{}': {source}", .path.display())]
+    #[error("I/O failed '{path}': {source}")]
     IoFaild {
         source: std::io::Error,
         path: PathBuf,
@@ -28,16 +28,18 @@ fn load_config(path: &Path) -> Result<String, Error> {
 ## 📝 Todo
 
 - [x] ~~Switch to Rust 2021.~~
-- [x] MSRV v1.34
+- [x] MSRV v1.33
 - [x] Use derive macro instead.
 - [x] Add attributes to context types.
 - [x] Support transparent error.
 - [x] Support generics.
 - [ ] More documentation.
+- [ ] More tests.
 
 ## 🚩 Minimal suppoted Rust version
 
-This crate may not compile with versions before `v1.34.0`.
+All tests under `tests/*` passed with `rustc v1.33`, previous versions may not
+compile.
 
 ## ⚖️ License
 

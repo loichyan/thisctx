@@ -40,7 +40,8 @@ enum UnusedGeneric<T1, T2> {
     Variant12(T2),
 }
 
-// TODO: enable this test
+// Const generics are supported since rustc 1.51
+//
 // #[derive(WithContext)]
 // enum ConstGeneric<const N1: usize, const N2: usize> {
 //     Variant13([String; N1]),

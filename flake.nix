@@ -32,7 +32,7 @@
           };
           msrv = mkShell {
             nativeBuildInputs = [
-              (pkgs.rust-bin.stable."1.34.0".minimal)
+              rust-bin.stable."1.33.0".minimal
             ];
           };
         };

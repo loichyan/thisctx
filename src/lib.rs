@@ -2,6 +2,7 @@
 //! to create errors with contexts, inspired by [snafu](https://crates.io/crates/snafu).
 //!
 //! # Example
+//!
 //! ```
 //! use std::path::{Path, PathBuf};
 //! use thisctx::WithContext;
@@ -9,7 +10,7 @@
 //!
 //! #[derive(Debug, Error, WithContext)]
 //! pub enum Error {
-//!     #[error("I/O failed '{}': {source}", .path.display())]
+//!     #[error("I/O failed '{path}': {source}")]
 //!     IoFaild {
 //!         source: std::io::Error,
 //!         path: PathBuf,

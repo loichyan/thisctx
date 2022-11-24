@@ -1,0 +1,30 @@
+error[E0364]: `PubCrateVariantContext` is only public within the crate, and cannot be re-exported outside
+  --> compile_tests/attr_visibility.rs:19:9
+   |
+19 | pub use error::PubCrateVariantContext;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: consider marking `PubCrateVariantContext` as `pub` in the imported module
+  --> compile_tests/attr_visibility.rs:19:9
+   |
+19 | pub use error::PubCrateVariantContext;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: struct `PrivateVariantContext` is private
+  --> compile_tests/attr_visibility.rs:18:16
+   |
+18 | pub use error::PrivateVariantContext;
+   |                ^^^^^^^^^^^^^^^^^^^^^ private struct
+   |
+note: the struct `PrivateVariantContext` is defined here
+  --> compile_tests/attr_visibility.rs:6:14
+   |
+6  |     #[derive(WithContext)]
+   |              ^^^^^^^^^^^
+   = note: this error originates in the derive macro `WithContext` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0616]: field `0` of struct `PrivateFieldContext` is private
+  --> compile_tests/attr_visibility.rs:28:7
+   |
+28 |     t.0;
+   |       ^ private field

@@ -1,0 +1,13 @@
+[package]
+name = "compile_tests"
+version = "0.0.0"
+authors = ["loichyan <loichyan@foxmail.com>"]
+edition = "2018"
+rust-version = "1.45"
+
+[dependencies]
+rustversion = "1.0"
+trybuild = "1.0"
+
+[dependencies.thisctx]
+path = ".."

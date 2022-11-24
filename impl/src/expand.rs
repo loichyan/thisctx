@@ -98,7 +98,7 @@ pub fn impl_struct(input: Struct) -> TokenStream {
             input: input.original,
             variant: None,
             surround: Surround::from_fields(&input.data.fields),
-            options: ContextOptions::from_attrs([&input.attrs].iter().map(|x| *x)),
+            options: ContextOptions::from_attrs([&input.attrs].iter().map(<_>::clone)),
             ident: &input.original.ident,
             fields: &input.fields,
         }
@@ -128,7 +128,9 @@ impl<'a> Enum<'a> {
             input: self.original,
             variant: Some(&variant.original.ident),
             surround: Surround::from_fields(&variant.original.fields),
-            options: ContextOptions::from_attrs([&self.attrs, &variant.attrs].iter().map(|x| *x)),
+            options: ContextOptions::from_attrs(
+                [&self.attrs, &variant.attrs].iter().map(<_>::clone),
+            ),
             ident: &variant.original.ident,
             fields: &variant.fields,
         }
