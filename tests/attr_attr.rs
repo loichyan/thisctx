@@ -1,11 +1,9 @@
 use ::thisctx::WithContext;
 
 #[derive(WithContext)]
-#[thisctx(attr(doc = "I'm on Line#2\n\n"))]
-#[thisctx(attr(derive(Clone)))]
+#[thisctx(attr(doc = "I'm on Line#2\n\n"), attr(derive(Clone)))]
 pub enum Error {
-    #[thisctx(attr(doc = "I'm on Line#1\n\n"))]
-    #[thisctx(attr(derive(Copy)))]
+    #[thisctx(attr(doc = "I'm on Line#1\n\n"), attr(derive(Copy)))]
     ExtendAttributes(String),
     #[thisctx(attr(doc = "I'm also on Line#1\n\n"))]
     FieldAttributes(#[thisctx(attr(doc = "I'm a field"))] String),

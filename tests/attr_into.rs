@@ -51,8 +51,7 @@ enum Enum {
 }
 
 #[derive(Debug, WithContext)]
-#[thisctx(into(Error))]
-#[thisctx(into(Error2))]
+#[thisctx(into(Error), into(Error2))]
 #[error("{0}")]
 struct Struct(String);
 

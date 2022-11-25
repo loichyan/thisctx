@@ -1,8 +1,7 @@
 use thisctx::{IntoError, WithContext};
 
 #[derive(WithContext)]
-#[thisctx(module(context))]
-#[thisctx(suffix(false))]
+#[thisctx(module(context), suffix(false))]
 pub(crate) enum Error {
     Variant1(String),
     Variant2(i32),
