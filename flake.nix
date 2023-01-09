@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs.url = "nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     fenix = {
       url = "github:nix-community/fenix";
@@ -20,7 +20,10 @@
         devShells = {
           default = mkShell {
             nativeBuildInputs = [
-              (pkgs.fenix.stable.defaultToolchain)
+              (with pkgs.fenix; combine [
+                stable.defaultToolchain
+                stable.rust-src
+              ])
             ];
           };
           msrv = mkShell {

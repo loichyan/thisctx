@@ -1,6 +1,6 @@
 [workspace]
-members = ["impl"]
-exclude = ["compile_tests"]
+members = ["packages/*"]
+exclude = ["packages/compile_tests"]
 
 [package]
 name = "thisctx"
@@ -18,8 +18,9 @@ documentation = "https://docs.rs/thisctx"
 keywords = ["error", "derive"]
 categories = ["rust-patterns"]
 
-[dependencies]
-thisctx_impl = { path = "impl" }
+[dependencies.thisctx_impl]
+version = "*"
+path = "packages/impl"
 
 [dev-dependencies]
 thiserror = "1.0"
