@@ -12,7 +12,6 @@ impl Default for HelloWorld {
 #[derive(Debug, Eq, PartialEq, WithContext)]
 enum Error {
     NoneSource(&'static str),
-    SourceImplDefaut(#[source] HelloWorld),
 }
 
 #[test]
@@ -21,20 +20,16 @@ fn from_context() {
         Error::from(NoneSourceContext("Hello, thisctx!")),
         Error::NoneSource("Hello, thisctx!"),
     );
-    assert_eq!(
-        Error::from(SourceImplDefautContext),
-        Error::SourceImplDefaut(HelloWorld("Hello, world!")),
-    );
 }
 
 #[test]
 fn into_error() {
     assert_eq!(
-        SourceImplDefautContext.build(),
-        Error::SourceImplDefaut(HelloWorld("Hello, world!")),
+        NoneSourceContext("Hello, world!").build(),
+        Error::NoneSource("Hello, world!"),
     );
     assert_eq!(
-        SourceImplDefautContext.fail::<()>(),
-        Err(Error::SourceImplDefaut(HelloWorld("Hello, world!"))),
+        NoneSourceContext("Hello, world!").fail::<()>(),
+        Err(Error::NoneSource("Hello, world!")),
     );
 }

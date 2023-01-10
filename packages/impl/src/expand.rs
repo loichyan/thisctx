@@ -399,13 +399,14 @@ impl<'a> Context<'a> {
         let constructor_ident = &self.input.ident;
         let constructor_ty = Quote2Types(&constructor_ident, QuoteGeneric(&constructor_generics));
         let constructor_ty_variant = self.variant.map(QuoteLeadingColon2);
+        let has_source = source_ty.is_some();
         let source_ty = QuoteSourceType(source_ty);
 
         for error_ty in std::iter::once(Quote2Variants::Variant2(constructor_ty))
             .chain(self.options.into.iter().map(Quote2Variants::Variant1))
         {
             let into_error_ty = Quote2Types(t_into_error, QuoteGeneric(&error_ty));
-            // Generate `impl From for Error`.
+            // Generate `impl IntoError for Context`.
             quote_extend!(tokens=>
                 #[allow(non_camel_case_types)]
                 impl<#impl_generics> #into_error_ty
@@ -421,22 +422,24 @@ impl<'a> Context<'a> {
                     }
                 }
             );
-            // Generate `impl IntoError for Context`.
-            quote_extend!(tokens=>
-                #[allow(non_camel_case_types)]
-                impl<#impl_generics>
-                #t_from<#context_ty>
-                for #error_ty
-                where #impl_bounds
-                    #context_ty: #into_error_ty,
-                    <#context_ty as #into_error_ty>::Source: #t_default,
-                {
-                    #[inline]
-                    fn from(context: #context_ty) -> Self {
-                        #t_into_error::into_error(context, #t_default::default())
+            if !has_source {
+                // Generate `impl From for Error` if no `source` is specified.
+                quote_extend!(tokens=>
+                    #[allow(non_camel_case_types)]
+                    impl<#impl_generics>
+                    #t_from<#context_ty>
+                    for #error_ty
+                    where #impl_bounds
+                        #context_ty: #into_error_ty,
+                        <#context_ty as #into_error_ty>::Source: #t_default,
+                    {
+                        #[inline]
+                        fn from(context: #context_ty) -> Self {
+                            #t_into_error::into_error(context, #t_default::default())
+                        }
                     }
-                }
-            );
+                );
+            }
         }
     }
 }
