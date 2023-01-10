@@ -63,13 +63,15 @@ pub trait WithContext {
 
     fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<Self::Ok, E>
     where
-        C: IntoError<E, Source = Self::Err>;
+        C: IntoError<E>,
+        Self::Err: Into<C::Source>;
 
     #[inline]
     fn context<E, C>(self, context: C) -> Result<Self::Ok, E>
     where
         Self: Sized,
-        C: IntoError<E, Source = Self::Err>,
+        C: IntoError<E>,
+        Self::Err: Into<C::Source>,
     {
         self.context_with(|| context)
     }
@@ -82,9 +84,10 @@ impl<T, Err> WithContext for Result<T, Err> {
     #[inline]
     fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<T, E>
     where
-        C: IntoError<E, Source = Err>,
+        C: IntoError<E>,
+        Err: Into<C::Source>,
     {
-        self.map_err(|e| f().into_error(e))
+        self.map_err(|e| f().into_error(e.into()))
     }
 }
 
@@ -95,8 +98,9 @@ impl<T> WithContext for Option<T> {
     #[inline]
     fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<T, E>
     where
-        C: IntoError<E, Source = NoneSource>,
+        C: IntoError<E>,
+        NoneSource: Into<C::Source>,
     {
-        self.ok_or_else(|| f().into_error(NoneSource))
+        self.ok_or_else(|| f().into_error(NoneSource.into()))
     }
 }
