@@ -25,6 +25,13 @@
 
 pub use thisctx_impl::WithContext;
 
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
+pub struct NoneSource;
+
+pub trait IntoSource<T> {
+    fn into_source(self) -> T;
+}
+
 pub trait IntoError<E> {
     type Source;
 
@@ -34,16 +41,16 @@ pub trait IntoError<E> {
     fn build(self) -> E
     where
         Self: Sized,
-        Self::Source: Default,
+        Self: IntoError<E, Source = NoneSource>,
     {
-        self.into_error(<_>::default())
+        self.into_error(NoneSource)
     }
 
     #[inline]
     fn fail<T>(self) -> Result<T, E>
     where
         Self: Sized,
-        Self::Source: Default,
+        Self: IntoError<E, Source = NoneSource>,
     {
         Err(self.build())
     }
@@ -83,13 +90,13 @@ impl<T, Err> WithContext for Result<T, Err> {
 
 impl<T> WithContext for Option<T> {
     type Ok = T;
-    type Err = ();
+    type Err = NoneSource;
 
     #[inline]
     fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<T, E>
     where
-        C: IntoError<E, Source = ()>,
+        C: IntoError<E, Source = NoneSource>,
     {
-        self.ok_or_else(|| f().into_error(()))
+        self.ok_or_else(|| f().into_error(NoneSource))
     }
 }

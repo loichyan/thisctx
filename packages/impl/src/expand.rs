@@ -67,7 +67,7 @@ define_arg! {
 impl_arg!(WithoutTrailingSemi(EmitTrailingSemi = false,));
 impl_arg!(WithTrailingSemi(EmitTrailingSemi = true,));
 
-new_type_quote!(ty_none_source=> ());
+new_type_quote!(ty_none_source=> ::thisctx::NoneSource);
 new_type_quote!(i_source_var=> source);
 new_type_quote!(t_from=> ::core::convert::From);
 new_type_quote!(t_into=> ::core::convert::Into);
