@@ -46,6 +46,7 @@ pub trait IntoError<E> {
         self.into_error(NoneSource)
     }
 
+    // TODO: use never type instead?
     #[inline]
     fn fail<T>(self) -> Result<T, E>
     where
@@ -56,7 +57,6 @@ pub trait IntoError<E> {
     }
 }
 
-// TODO: must use?
 pub trait WithContext {
     type Ok;
     type Err;
