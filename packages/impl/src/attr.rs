@@ -66,26 +66,26 @@ impl Parse for Suffix {
 pub fn get(input: &[Attribute]) -> Result<Attrs> {
     let mut attrs = Attrs::default();
 
-    macro_rules! check_dup {
-        ($original:expr, $attr:ident) => {
-            if attrs.$attr.is_some() {
-                return Err(Error::new_spanned(
-                    $original,
-                    concat!("duplicate #[", stringify!($attr), "] attribute"),
-                ));
-            }
-        };
-    }
-
     for attr in input {
+        macro_rules! check_dup {
+            ($attr:ident) => {
+                if attrs.$attr.is_some() {
+                    return Err(Error::new_spanned(
+                        attr,
+                        concat!("duplicate #[", stringify!($attr), "] attribute"),
+                    ));
+                }
+            };
+        }
+
         if attr.path.is_ident("thisctx") {
             parse_thisctx_attribute(&mut attrs.thisctx, attr)?;
         } else if attr.path.is_ident("source") {
             require_empty_attribute(attr)?;
-            check_dup!(attr, source);
+            check_dup!(source);
             attrs.source = Some(attr);
         } else if attr.path.is_ident("error") {
-            check_dup!(attr, error);
+            check_dup!(error);
             attrs.error = Some(parse_error_attribute(attr)?);
         }
     }
@@ -100,14 +100,18 @@ fn require_empty_attribute(attr: &Attribute) -> Result<()> {
 fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Result<()> {
     original.parse_args_with(|input: ParseStream| {
         macro_rules! check_dup {
-            ($attr:ident) => {{
-                let kw = input.parse::<kw::$attr>()?;
+            ($attr:ident) => {
+                check_dup!($attr, kw::$attr)
+            };
+            ($attr:ident, $kw:ty) => {{
+                let kw = input.parse::<$kw>()?;
                 if attrs.$attr.is_some() {
                     return Err(Error::new_spanned(
                         kw,
                         concat!("duplicate #[thisctx(", stringify!($attr), ")] attribute"),
                     ));
                 }
+                kw
             }};
         }
 
@@ -119,6 +123,8 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
             if lookhead.peek(kw::visibility) {
                 check_dup!(visibility);
                 attrs.visibility = parse_thisctx_arg(input)?;
+            } else if lookhead.peek(Token![pub]) {
+                attrs.visibility = Some(check_dup!(visibility, Visibility));
             } else if lookhead.peek(kw::suffix) {
                 check_dup!(suffix);
                 attrs.suffix = parse_thisctx_arg(input)?;

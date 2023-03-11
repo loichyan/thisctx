@@ -5,6 +5,9 @@ mod error {
 
     #[derive(Debug, WithContext)]
     #[thisctx(visibility = "pub(crate)")]
+    // Syntax as follows is also allowed.
+    // #[thisctx(visibility(pub(crate)))]
+    // #[thisctx(pub(crate))]
     pub enum Error {
         #[thisctx(visibility = "pub")]
         PubVariant(#[thisctx(visibility = "pub(crate)")] i32),

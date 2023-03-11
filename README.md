@@ -33,7 +33,7 @@ fn load_config(path: &Path) -> Result<String, Error> {
 - [x] Add attributes to context types.
 - [x] Support transparent error.
 - [x] Support generics.
-- [ ] Simplify the derive implementation.
+- [x] Simplify the derive implementation.
 - [ ] More documentation.
 - [ ] More tests.
 
