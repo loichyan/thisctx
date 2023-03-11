@@ -28,11 +28,11 @@ pub use thisctx_impl::WithContext;
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub struct NoneSource;
 
-pub trait IntoSource<T> {
+pub trait IntoSource<T>: Sized {
     fn into_source(self) -> T;
 }
 
-pub trait IntoError<E> {
+pub trait IntoError<E>: Sized {
     type Source;
 
     fn into_error(self, source: Self::Source) -> E;
@@ -40,7 +40,6 @@ pub trait IntoError<E> {
     #[inline]
     fn build(self) -> E
     where
-        Self: Sized,
         Self: IntoError<E, Source = NoneSource>,
     {
         self.into_error(NoneSource)
@@ -50,14 +49,13 @@ pub trait IntoError<E> {
     #[inline]
     fn fail<T>(self) -> Result<T, E>
     where
-        Self: Sized,
         Self: IntoError<E, Source = NoneSource>,
     {
         Err(self.build())
     }
 }
 
-pub trait WithContext {
+pub trait WithContext: Sized {
     type Ok;
     type Err;
 
@@ -69,7 +67,6 @@ pub trait WithContext {
     #[inline]
     fn context<E, C>(self, context: C) -> Result<Self::Ok, E>
     where
-        Self: Sized,
         C: IntoError<E>,
         Self::Err: Into<C::Source>,
     {
