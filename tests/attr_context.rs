@@ -1,10 +1,9 @@
 use thisctx::WithContext;
 
 #[derive(WithContext)]
-#[thisctx(context(false))]
 enum Error {
-    #[thisctx(context(true))]
     GenerateContext,
+    #[thisctx(skip)]
     NotGenerateContext,
 }
 

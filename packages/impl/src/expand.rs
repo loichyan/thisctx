@@ -47,7 +47,7 @@ pub fn derive(node: &DeriveInput) -> Result<TokenStream> {
 }
 
 pub fn impl_struct(input: Struct) -> Option<TokenStream> {
-    if matches!(input.attrs.context(), Some(false)) || input.attrs.is_transparent() {
+    if input.attrs.is_transparent() {
         return None;
     }
     Some(
@@ -78,11 +78,7 @@ pub fn impl_enum(input: Enum) -> TokenStream {
 
 impl<'a> Enum<'a> {
     fn impl_variant(&self, variant: &Variant) -> Option<TokenStream> {
-        if matches!(
-            variant.attrs.context().or_else(|| self.attrs.context()),
-            Some(false)
-        ) || variant.attrs.is_transparent()
-        {
+        if variant.attrs.thisctx.skip == Some(true) || variant.attrs.is_transparent() {
             return None;
         }
         Some(
@@ -107,10 +103,6 @@ impl<'a> Attrs<'a> {
             .as_ref()
             .and_then(|e| e.transparent.as_ref())
             .is_some()
-    }
-
-    fn context(&self) -> Option<bool> {
-        self.thisctx.context
     }
 
     fn with_module(&self, input: &DeriveInput, content: TokenStream) -> TokenStream {

@@ -8,15 +8,15 @@ use syn::{
 mod kw {
     use syn::custom_keyword;
 
-    custom_keyword!(visibility);
-    custom_keyword!(suffix);
-    custom_keyword!(unit);
     custom_keyword!(attr);
-    custom_keyword!(into);
-    custom_keyword!(transparent);
     custom_keyword!(generic);
-    custom_keyword!(context);
+    custom_keyword!(into);
     custom_keyword!(module);
+    custom_keyword!(skip);
+    custom_keyword!(suffix);
+    custom_keyword!(transparent);
+    custom_keyword!(unit);
+    custom_keyword!(visibility);
 }
 
 #[derive(Default)]
@@ -34,7 +34,7 @@ pub struct AttrThisctx {
     pub attr: Vec<TokenStream>,
     pub into: Vec<Type>,
     pub generic: Option<bool>,
-    pub context: Option<bool>,
+    pub skip: Option<bool>,
     pub module: Option<Ident>,
 }
 
@@ -122,30 +122,30 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
             let lookhead = input.lookahead1();
             if lookhead.peek(kw::visibility) {
                 check_dup!(visibility);
-                attrs.visibility = parse_thisctx_arg(input)?;
+                attrs.visibility = parse_thisctx_arg(input, true)?;
             } else if lookhead.peek(Token![pub]) {
                 attrs.visibility = Some(check_dup!(visibility, Visibility));
             } else if lookhead.peek(kw::suffix) {
                 check_dup!(suffix);
-                attrs.suffix = parse_thisctx_arg(input)?;
+                attrs.suffix = parse_thisctx_arg(input, true)?;
             } else if lookhead.peek(kw::unit) {
                 check_dup!(unit);
-                attrs.unit = parse_bool(input)?;
+                attrs.unit = Some(parse_bool(input)?);
             } else if lookhead.peek(kw::attr) {
                 input.parse::<kw::attr>()?;
-                attrs.attr.extend(parse_thisctx_arg(input)?);
+                attrs.attr.push(parse_thisctx_arg(input, true)?.unwrap());
             } else if lookhead.peek(kw::into) {
                 input.parse::<kw::into>()?;
-                attrs.into.extend(parse_thisctx_arg(input)?);
+                attrs.into.push(parse_thisctx_arg(input, true)?.unwrap());
             } else if lookhead.peek(kw::generic) {
                 check_dup!(generic);
-                attrs.generic = parse_bool(input)?;
-            } else if lookhead.peek(kw::context) {
-                check_dup!(context);
-                attrs.context = parse_bool(input)?;
+                attrs.generic = Some(parse_bool(input)?);
+            } else if lookhead.peek(kw::skip) {
+                check_dup!(skip);
+                attrs.skip = Some(parse_bool(input)?);
             } else if lookhead.peek(kw::module) {
                 check_dup!(module);
-                attrs.module = parse_thisctx_arg(input)?;
+                attrs.module = parse_thisctx_arg(input, true)?;
             } else {
                 return Err(lookhead.error());
             }
@@ -158,21 +158,23 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
     })
 }
 
-fn parse_bool(input: ParseStream) -> Result<Option<bool>> {
-    Ok(parse_thisctx_arg::<LitBool>(input)?.map(|flag| flag.value))
+fn parse_bool(input: ParseStream) -> Result<bool> {
+    Ok(parse_thisctx_arg::<LitBool>(input, false)?
+        .map(|flag| flag.value)
+        .unwrap_or(true))
 }
 
-fn parse_thisctx_arg<T: Parse>(input: ParseStream) -> Result<Option<T>> {
-    if input.peek(token::Paren) {
-        let content;
-        parenthesized!(content in input);
-        content.parse().map(Some)
-    } else if input.peek(Token![=]) {
+fn parse_thisctx_arg<T: Parse>(input: ParseStream, required: bool) -> Result<Option<T>> {
+    if input.peek(Token![=]) {
         input.parse::<Token![=]>()?;
         let s = input.parse::<LitStr>()?;
         s.parse().map(Some)
-    } else {
+    } else if !required && !input.peek(token::Paren) {
         Ok(None)
+    } else {
+        let content;
+        parenthesized!(content in input);
+        content.parse().map(Some)
     }
 }
 
