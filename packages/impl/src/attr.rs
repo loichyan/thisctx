@@ -17,6 +17,9 @@ mod kw {
     custom_keyword!(transparent);
     custom_keyword!(unit);
     custom_keyword!(visibility);
+    custom_keyword!(no_generic);
+    custom_keyword!(no_skip);
+    custom_keyword!(no_unit);
 }
 
 #[derive(Default)]
@@ -115,19 +118,29 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
             }};
         }
 
+        macro_rules! parse_bool {
+            ($attr:ident) => {
+                check_dup!($attr);
+                attrs.$attr = Some(parse_bool(input)?);
+            };
+            ($attr:ident, $no_attr:ident) => {
+                check_dup!($attr, kw::$no_attr);
+                attrs.$attr = Some(!parse_bool(input)?);
+            };
+        }
+
         loop {
             if input.is_empty() {
                 break;
             }
             let lookhead = input.lookahead1();
-            if lookhead.peek(Token![pub]) {
-                attrs.visibility = Some(check_dup!(visibility, Visibility));
-            } else if lookhead.peek(kw::attr) {
+            if lookhead.peek(kw::attr) {
                 input.parse::<kw::attr>()?;
                 attrs.attr.push(parse_thisctx_arg(input, true)?.unwrap());
             } else if lookhead.peek(kw::generic) {
-                check_dup!(generic);
-                attrs.generic = Some(parse_bool(input)?);
+                parse_bool!(generic);
+            } else if lookhead.peek(kw::no_generic) {
+                parse_bool!(generic, no_generic);
             } else if lookhead.peek(kw::into) {
                 input.parse::<kw::into>()?;
                 attrs.into.push(parse_thisctx_arg(input, true)?.unwrap());
@@ -135,17 +148,21 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
                 check_dup!(module);
                 attrs.module = parse_thisctx_arg(input, true)?;
             } else if lookhead.peek(kw::skip) {
-                check_dup!(skip);
-                attrs.skip = Some(parse_bool(input)?);
+                parse_bool!(skip);
+            } else if lookhead.peek(kw::no_skip) {
+                parse_bool!(skip, no_skip);
             } else if lookhead.peek(kw::suffix) {
                 check_dup!(suffix);
                 attrs.suffix = Some(parse_thisctx_arg(input, false)?.unwrap_or(Suffix::Flag(true)));
             } else if lookhead.peek(kw::unit) {
-                check_dup!(unit);
-                attrs.unit = Some(parse_bool(input)?);
+                parse_bool!(unit);
+            } else if lookhead.peek(kw::no_unit) {
+                parse_bool!(unit, no_unit);
             } else if lookhead.peek(kw::visibility) {
                 check_dup!(visibility);
                 attrs.visibility = parse_thisctx_arg(input, true)?;
+            } else if lookhead.peek(Token![pub]) {
+                attrs.visibility = Some(check_dup!(visibility, Visibility));
             } else {
                 return Err(lookhead.error());
             }

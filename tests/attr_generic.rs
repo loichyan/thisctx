@@ -1,16 +1,16 @@
 use thisctx::WithContext;
 
 #[derive(WithContext)]
-#[thisctx(generic(false))]
+#[thisctx(no_generic)]
 enum Error {
     #[thisctx(generic)]
     GeneratedGeneric(String),
     #[thisctx(generic)]
-    NoGeneratedGenericOnField(String, #[thisctx(generic(false))] String, String),
+    NoGeneratedGenericOnField(String, #[thisctx(no_generic)] String, String),
     NoGeneratedGeneric(String),
 }
 
 #[test]
-fn attr_no_generic() {
+fn attr_generic() {
     let _ = NoGeneratedGenericOnField::<&str, &str>("What's", "going".to_owned(), "on");
 }
