@@ -8,7 +8,7 @@ enum Error {
 }
 
 #[test]
-fn attr_unit() {
+fn attr_no_unit() {
     NotUnit().build();
     Unit.build();
 }

@@ -8,7 +8,7 @@ enum Error {
 }
 
 #[test]
-fn attr_context() {
+fn attr_skip() {
     let _ = GenerateContext;
     let _ = Error::NotGenerateContext;
 }
