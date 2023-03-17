@@ -1,6 +1,6 @@
 use crate::{
     ast::{Enum, Field, Input, Struct, Variant},
-    attr::{Attrs, Suffix},
+    attr::{Attrs, FlagOrIdent},
     generics::{GenericName, TypeParamBound},
 };
 use proc_macro2::TokenStream;
@@ -52,7 +52,7 @@ pub fn impl_struct(input: Struct) -> Option<TokenStream> {
     }
     let mut options = ContextOptions::from_attrs([&input.attrs].iter().map(<_>::clone));
     if options.suffix.is_none() {
-        options.suffix = Some(&Suffix::Flag(true));
+        options.suffix = Some(&FlagOrIdent::Flag(true));
     }
     Some(
         input.attrs.with_module(
@@ -120,7 +120,19 @@ impl<'a> Attrs<'a> {
             return content;
         }
         let vis = self.thisctx.visibility.as_ref().unwrap_or(&input.vis);
-        if let Some(module) = self.thisctx.module.as_ref() {
+        let module = self
+            .thisctx
+            .module
+            .as_ref()
+            .and_then(|module| match module {
+                FlagOrIdent::Flag(true) => Some(Ident::new(
+                    &camel_to_snake(&input.ident.to_string()),
+                    input.ident.span(),
+                )),
+                FlagOrIdent::Ident(ident) => Some(ident.clone()),
+                FlagOrIdent::Flag(false) => None,
+            });
+        if let Some(module) = module {
             quote!(#vis mod #module {
                 use super::*;
                 #content
@@ -146,7 +158,7 @@ struct ContextOptions<'a> {
     attr: TokenStream,
     generic: Option<bool>,
     into: Vec<&'a Type>,
-    suffix: Option<&'a Suffix>,
+    suffix: Option<&'a FlagOrIdent>,
     unit: Option<bool>,
     visibility: Option<&'a Visibility>,
 }
@@ -250,10 +262,7 @@ impl<'a> Context<'a> {
                     bounds.context.selected = true;
                 });
                 generated = generated
-                    &&
-                        field.attrs.thisctx.generic.or(self.options.generic)
-                        !=
-                        Some(false);
+                    && field.attrs.thisctx.generic.or(self.options.generic) != Some(false);
                 field_ty = if generated {
                     // Generate a new type for conversion.
                     let generated = if let FieldName::Named(name) = field_name {
@@ -290,10 +299,12 @@ impl<'a> Context<'a> {
             let ident = self.ident;
             let span = self.ident.span();
             match self.options.suffix {
-                Some(Suffix::Flag(true)) => {
+                Some(FlagOrIdent::Flag(true)) => {
                     format_ident!("{}{}", ident, DEFAULT_SUFFIX, span = span)
                 }
-                Some(Suffix::Ident(suffix)) => format_ident!("{}{}", ident, suffix, span = span),
+                Some(FlagOrIdent::Ident(suffix)) => {
+                    format_ident!("{}{}", ident, suffix, span = span)
+                }
                 _ => self.ident.clone(),
             }
         };
@@ -304,7 +315,7 @@ impl<'a> Context<'a> {
             let generics1 = quote_analyzed_generics(&generics_analyzer, true, true);
             let generics2 = quote_generated_generics(&fields_analyzer, true);
             let fields = quote_context_fileds(&fields_analyzer);
-            let body = if is_unit && self.options.unit!= Some(false) {
+            let body = if is_unit && self.options.unit != Some(false) {
                 Surround::None
             } else {
                 self.surround
@@ -567,4 +578,15 @@ impl ToTokens for TypeParamBound<'_> {
             TypeParamBound::Lifetime(t) => t.to_tokens(tokens),
         }
     }
+}
+
+fn camel_to_snake(s: &str) -> String {
+    let mut snake = String::default();
+    for (i, ch) in s.char_indices() {
+        if i > 0 && ch.is_ascii_uppercase() {
+            snake.push('_');
+        }
+        snake.push(ch.to_ascii_lowercase());
+    }
+    snake
 }

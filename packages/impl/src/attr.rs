@@ -10,17 +10,18 @@ mod kw {
 
     custom_keyword!(attr);
     custom_keyword!(generic);
+    custom_keyword!(no_generic);
     custom_keyword!(into);
     custom_keyword!(module);
+    custom_keyword!(no_module);
     custom_keyword!(skip);
+    custom_keyword!(no_skip);
     custom_keyword!(suffix);
+    custom_keyword!(no_suffix);
     custom_keyword!(transparent);
     custom_keyword!(unit);
-    custom_keyword!(visibility);
-    custom_keyword!(no_generic);
-    custom_keyword!(no_skip);
-    custom_keyword!(no_suffix);
     custom_keyword!(no_unit);
+    custom_keyword!(visibility);
 }
 
 #[derive(Default)]
@@ -35,9 +36,9 @@ pub struct AttrThisctx {
     pub attr: Vec<TokenStream>,
     pub generic: Option<bool>,
     pub into: Vec<Type>,
-    pub module: Option<Ident>,
+    pub module: Option<FlagOrIdent>,
     pub skip: Option<bool>,
-    pub suffix: Option<Suffix>,
+    pub suffix: Option<FlagOrIdent>,
     pub unit: Option<bool>,
     pub visibility: Option<Visibility>,
 }
@@ -47,20 +48,24 @@ pub struct AttrError<'a> {
     pub transparent: Option<&'a Attribute>,
 }
 
-pub enum Suffix {
+pub enum FlagOrIdent {
     Flag(bool),
     Ident(Ident),
 }
 
-impl Parse for Suffix {
+impl From<bool> for FlagOrIdent {
+    fn from(value: bool) -> Self {
+        Self::Flag(value)
+    }
+}
+
+impl Parse for FlagOrIdent {
     fn parse(input: ParseStream) -> Result<Self> {
         let lookhead = input.lookahead1();
         if lookhead.peek(LitBool) {
-            input
-                .parse::<LitBool>()
-                .map(|flag| Suffix::Flag(flag.value))
+            input.parse::<LitBool>().map(|flag| flag.value.into())
         } else if lookhead.peek(Ident) {
-            input.parse().map(Suffix::Ident)
+            input.parse().map(FlagOrIdent::Ident)
         } else {
             Err(lookhead.error())
         }
@@ -122,11 +127,11 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
         macro_rules! parse_bool {
             ($attr:ident) => {
                 check_dup!($attr);
-                attrs.$attr = Some(parse_bool(input)?);
+                attrs.$attr = Some(parse_bool(input)?.into());
             };
             ($attr:ident, $no_attr:ident) => {
                 check_dup!($attr, kw::$no_attr);
-                attrs.$attr = Some(!parse_bool(input)?);
+                attrs.$attr = Some((!parse_bool(input)?).into());
             };
         }
 
@@ -147,17 +152,18 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
                 attrs.into.push(parse_thisctx_arg(input, true)?.unwrap());
             } else if lookhead.peek(kw::module) {
                 check_dup!(module);
-                attrs.module = parse_thisctx_arg(input, true)?;
+                attrs.module = Some(parse_flag_or_ident(input)?);
+            } else if lookhead.peek(kw::no_module) {
+                parse_bool!(module, no_module);
             } else if lookhead.peek(kw::skip) {
                 parse_bool!(skip);
             } else if lookhead.peek(kw::no_skip) {
                 parse_bool!(skip, no_skip);
             } else if lookhead.peek(kw::suffix) {
                 check_dup!(suffix);
-                attrs.suffix = Some(parse_thisctx_arg(input, false)?.unwrap_or(Suffix::Flag(true)));
+                attrs.suffix = Some(parse_flag_or_ident(input)?);
             } else if lookhead.peek(kw::no_suffix) {
-                check_dup!(suffix, kw::no_suffix);
-                attrs.suffix = Some(Suffix::Flag(!parse_bool(input)?));
+                parse_bool!(suffix, no_suffix);
             } else if lookhead.peek(kw::unit) {
                 parse_bool!(unit);
             } else if lookhead.peek(kw::no_unit) {
@@ -177,6 +183,10 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
         }
         Ok(())
     })
+}
+
+fn parse_flag_or_ident(input: ParseStream) -> Result<FlagOrIdent> {
+    Ok(parse_thisctx_arg(input, false)?.unwrap_or(true.into()))
 }
 
 fn parse_bool(input: ParseStream) -> Result<bool> {
