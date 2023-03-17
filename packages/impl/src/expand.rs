@@ -144,10 +144,10 @@ struct Context<'a> {
 #[derive(Default)]
 struct ContextOptions<'a> {
     attr: TokenStream,
+    generic: Option<bool>,
     into: Vec<&'a Type>,
-    no_generic: Option<bool>,
-    no_unit: Option<bool>,
     suffix: Option<&'a Suffix>,
+    unit: Option<bool>,
     visibility: Option<&'a Visibility>,
 }
 
@@ -174,7 +174,7 @@ impl<'a> ContextOptions<'a> {
                 }
                 update_options!($attrs=> $($rest)*);
             };
-            ($attrs:expr=> *$attr:ident, $($rest:tt)*) => {
+            ($attrs:expr=> +$attr:ident, $($rest:tt)*) => {
                 new.$attr.extend($attrs.thisctx.$attr.iter());
                 update_options!($attrs=> $($rest)*);
             };
@@ -186,11 +186,11 @@ impl<'a> ContextOptions<'a> {
         }
         for attrs in attrs_iter {
             update_options!(attrs=>
-                no_generic,
-                no_unit,
+                generic,
+                unit,
                 &suffix,
                 &visibility,
-                *into,
+                +into,
             );
         }
 
@@ -250,7 +250,10 @@ impl<'a> Context<'a> {
                     bounds.context.selected = true;
                 });
                 generated = generated
-                    && field.attrs.thisctx.no_generic.or(self.options.no_generic) != Some(true);
+                    &&
+                        field.attrs.thisctx.generic.or(self.options.generic)
+                        !=
+                        Some(false);
                 field_ty = if generated {
                     // Generate a new type for conversion.
                     let generated = if let FieldName::Named(name) = field_name {
@@ -301,7 +304,7 @@ impl<'a> Context<'a> {
             let generics1 = quote_analyzed_generics(&generics_analyzer, true, true);
             let generics2 = quote_generated_generics(&fields_analyzer, true);
             let fields = quote_context_fileds(&fields_analyzer);
-            let body = if is_unit && self.options.no_unit != Some(true) {
+            let body = if is_unit && self.options.unit!= Some(false) {
                 Surround::None
             } else {
                 self.surround
