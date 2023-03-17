@@ -19,6 +19,7 @@ mod kw {
     custom_keyword!(visibility);
     custom_keyword!(no_generic);
     custom_keyword!(no_skip);
+    custom_keyword!(no_suffix);
     custom_keyword!(no_unit);
 }
 
@@ -154,6 +155,9 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
             } else if lookhead.peek(kw::suffix) {
                 check_dup!(suffix);
                 attrs.suffix = Some(parse_thisctx_arg(input, false)?.unwrap_or(Suffix::Flag(true)));
+            } else if lookhead.peek(kw::no_suffix) {
+                check_dup!(suffix, kw::no_suffix);
+                attrs.suffix = Some(Suffix::Flag(!parse_bool(input)?));
             } else if lookhead.peek(kw::unit) {
                 parse_bool!(unit);
             } else if lookhead.peek(kw::no_unit) {
