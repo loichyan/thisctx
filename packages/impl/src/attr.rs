@@ -14,7 +14,6 @@ mod kw {
     custom_keyword!(module);
     custom_keyword!(no_generic);
     custom_keyword!(no_unit);
-    custom_keyword!(no_unwrap);
     custom_keyword!(skip);
     custom_keyword!(suffix);
     custom_keyword!(transparent);
@@ -35,7 +34,6 @@ pub struct AttrThisctx {
     pub module: Option<Ident>,
     pub no_generic: Option<bool>,
     pub no_unit: Option<bool>,
-    pub no_unwrap: Option<bool>,
     pub skip: Option<bool>,
     pub suffix: Option<Suffix>,
     pub visibility: Option<Visibility>,
@@ -141,9 +139,6 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
             } else if lookhead.peek(kw::no_unit) {
                 check_dup!(no_unit);
                 attrs.no_unit = Some(parse_bool(input)?);
-            } else if lookhead.peek(kw::no_unwrap) {
-                check_dup!(no_unwrap);
-                attrs.no_unwrap = Some(parse_bool(input)?);
             } else if lookhead.peek(kw::skip) {
                 check_dup!(skip);
                 attrs.skip = Some(parse_bool(input)?);
