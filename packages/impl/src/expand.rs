@@ -4,12 +4,16 @@ use crate::{
     generics::{GenericName, TypeParamBound},
 };
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, ToTokens};
-use syn::{DeriveInput, Fields, Ident, Index, Result, Token, Type, Visibility};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
+use syn::{
+    spanned::Spanned, DeriveInput, Fields, GenericArgument, Ident, Index, PathArguments, Result,
+    Token, Type, Visibility,
+};
 
 macro_rules! new_type_quote {
     ($($name:ident($($tt:tt)*);)*) => {$(
         #[allow(non_camel_case_types)]
+        #[allow(clippy::upper_case_acronyms)]
         struct $name;
         impl ToTokens for $name {
             #[inline]
@@ -23,6 +27,7 @@ macro_rules! new_type_quote {
 new_type_quote!(
     // Types
     NONE_SOURCE  (::thisctx::NoneSource);
+    OPTION       (::core::option::Option);
 
     // Identifiers
     I_SOURCE_VAR (source);
@@ -140,6 +145,7 @@ struct ContextOptions<'a> {
     into: Vec<&'a Type>,
     no_generic: Option<bool>,
     no_unit: Option<bool>,
+    no_unwrap: Option<bool>,
     suffix: Option<&'a Suffix>,
     visibility: Option<&'a Visibility>,
 }
@@ -181,6 +187,7 @@ impl<'a> ContextOptions<'a> {
             update_options!(attrs=>
                 no_generic,
                 no_unit,
+                no_unwrap,
                 &suffix,
                 &visibility,
                 *into,
@@ -247,11 +254,19 @@ impl<'a> Context<'a> {
                 field_ty = if generated {
                     // Generate a new type for conversion.
                     let generated = if let FieldName::Named(name) = field_name {
-                        format_ident!("__T{}", name)
+                        format_ident!("__T{}", name, span = original_ty.span())
                     } else {
-                        format_ident!("__T{}", index)
+                        format_ident!("__T{}", index, span = original_ty.span())
                     };
-                    FieldType::Generated(generated, original_ty)
+                    let wrapped = if matches!(
+                        field.attrs.thisctx.no_unwrap.or(self.options.no_unwrap),
+                        Some(true)
+                    ) {
+                        WrappedBy::None
+                    } else {
+                        unwrap_type(original_ty)
+                    };
+                    FieldType::Generated(generated, original_ty, wrapped)
                 } else {
                     FieldType::Original(original_ty)
                 };
@@ -412,9 +427,40 @@ struct FieldInfo<'a> {
 }
 
 enum FieldType<'a> {
-    Generated(Ident, &'a Type),
+    Generated(Ident, &'a Type, WrappedBy<'a>),
     Original(&'a Type),
     Source,
+}
+
+enum WrappedBy<'a> {
+    Option(&'a Type),
+    None,
+}
+
+fn unwrap_type(ty: &Type) -> WrappedBy {
+    if let Type::Path(ty) = ty {
+        if ty.qself.is_none() && ty.path.leading_colon.is_none() && ty.path.segments.len() == 1 {
+            let path = ty.path.segments.first().unwrap();
+            if path.ident == "Option" {
+                if let Some(ty) = check_inner_type(&path.arguments) {
+                    return WrappedBy::Option(ty);
+                }
+            }
+        }
+    }
+    WrappedBy::None
+}
+
+fn check_inner_type(path: &PathArguments) -> Option<&Type> {
+    if let PathArguments::AngleBracketed(path) = path {
+        if path.args.len() == 1 {
+            let first = path.args.first().unwrap();
+            if let GenericArgument::Type(ty) = first {
+                return Some(ty);
+            }
+        }
+    }
+    None
 }
 
 #[derive(Clone, Copy)]
@@ -457,8 +503,11 @@ fn quote_impl_bounds(generics: &GenericsAnalyzer, fields: &FieldsAnalyzer) -> To
     });
     let extra_bounds = generics.extra_bounds.iter().map(ToTokens::to_token_stream);
     let generated_bounds = fields.iter().flat_map(|(_, info)| {
-        if let FieldType::Generated(ty, original) = &info.ty {
-            Some(quote!(#ty: #T_INTO::<#original>))
+        if let FieldType::Generated(ty, original, wrapped) = &info.ty {
+            Some(match wrapped {
+                WrappedBy::Option(inner) => quote!(#ty: #T_INTO::<#inner>),
+                WrappedBy::None => quote!(#ty: #T_INTO::<#original>),
+            })
         } else {
             None
         }
@@ -481,7 +530,10 @@ fn quote_context_fileds(analyzer: &FieldsAnalyzer) -> TokenStream {
         };
         let ty = match &info.ty {
             FieldType::Original(ty) => ty.to_token_stream(),
-            FieldType::Generated(ty, _) => ty.to_token_stream(),
+            FieldType::Generated(ty, _, WrappedBy::Option(_)) => {
+                quote_spanned!(ty.span()=> #OPTION::<#ty>)
+            }
+            FieldType::Generated(ty, _, WrappedBy::None) => ty.to_token_stream(),
             FieldType::Source => unreachable!(),
         };
         Some(quote!(#(#[#attrs])* #vis #field #ty))
@@ -498,7 +550,10 @@ fn quote_consturctor_fileds(analyzer: &FieldsAnalyzer) -> TokenStream {
         };
         let expr = match &info.ty {
             FieldType::Original(_) => quote!(self.#name),
-            FieldType::Generated(..) => quote!(#T_INTO::into(self.#name)),
+            FieldType::Generated(_, _, WrappedBy::Option(_)) => {
+                quote!(#OPTION::map(self.#name, #T_INTO::into))
+            }
+            FieldType::Generated(_, _, WrappedBy::None) => quote!(#T_INTO::into(self.#name)),
             FieldType::Source => I_SOURCE_VAR.to_token_stream(),
         };
         quote!(#field #expr)
@@ -508,7 +563,11 @@ fn quote_consturctor_fileds(analyzer: &FieldsAnalyzer) -> TokenStream {
 
 fn quote_generated_generics(analyzer: &FieldsAnalyzer, emit_default: bool) -> TokenStream {
     let generics = analyzer.iter().flat_map(|(_, info)| {
-        if let FieldType::Generated(ty, original_ty) = &info.ty {
+        if let FieldType::Generated(ty, mut original_ty, wrapped) = &info.ty {
+            match wrapped {
+                WrappedBy::Option(inner) => original_ty = inner,
+                WrappedBy::None => (),
+            }
             let default = if emit_default {
                 Some(quote!(= #original_ty))
             } else {
