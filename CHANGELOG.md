@@ -10,8 +10,7 @@
 
 ### Fix
 
-- **derive**: only impl `From<Context>` for an error when `source` is not
-  specified
+- **derive**: only impl `From<Context>` for an error when `source` is not specified
 
 ### Refactor
 
@@ -25,11 +24,9 @@
 - **derive**: change MSRV to v1.33
 - **derive**: support `#[thisctx(attr = "...")]` syntax
 - minimal suppoted rust version v1.34
-- **derive**: use `#[thisctx(module)]` to generate context types into a single
-  module
+- **derive**: use `#[thisctx(module)]` to generate context types into a single module
 - **lib**: add `IntoError::{build, fail}`
-- **derive**: convert context types into errors when associated source types
-  implement `Default`
+- **derive**: convert context types into errors when associated source types implement `Default`
 - **derive**: add attributes `#[thisctx(context)]` and `#[thisctx(generic)]`
 - **lib**: support `#![no_std]`
 - **derive**: support generics (#7)
@@ -65,8 +62,8 @@
 
 ### BREAKING CHANGE
 
-- The tuple variant will be resolved in a similar way to the `Sturct Variant`,
-  which means you have to explicitly provide `@source` and `@context`.
+- The tuple variant will be resolved in a similar way to the `Sturct Variant`, which
+means you have to explicitly provide `@source` and `@context`.
 
 ### Feat
 
