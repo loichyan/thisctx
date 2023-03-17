@@ -15,15 +15,15 @@ mod error {
     }
 }
 
-pub use error::PrivateVariantContext;
-pub use error::PubCrateVariantContext;
-pub use error::PubVariantContext;
+pub use error::PrivateVariant;
+pub use error::PubCrateVariant;
+pub use error::PubVariant;
 
 fn any<T>() -> T {
     todo!()
 }
 
 fn main() {
-    let t = any::<error::PrivateFieldContext>();
+    let t = any::<error::PrivateField>();
     t.0;
 }

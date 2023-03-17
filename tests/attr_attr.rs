@@ -13,6 +13,6 @@ fn requires_copied<T: Copy>(_: T) {}
 
 #[test]
 fn attr_attr() {
-    let ctx = ExtendAttributesContext("What's going on?");
+    let ctx = ExtendAttributes("What's going on?");
     requires_copied(ctx);
 }

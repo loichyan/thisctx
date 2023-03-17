@@ -27,7 +27,7 @@ enum Error {
 #[test]
 fn derive_enum() {
     assert_eq!(
-        NamedWithSourceContext {
+        NamedWithSource {
             context_1: "Hello,",
             context_2: 233,
         }
@@ -39,7 +39,7 @@ fn derive_enum() {
         },
     );
     assert_eq!(
-        NamedWithSourceAttrContext {
+        NamedWithSourceAttr {
             context_1: "What's",
             context_2: 777,
         }
@@ -51,7 +51,7 @@ fn derive_enum() {
         },
     );
     assert_eq!(
-        NamedWithoutSourceContext {
+        NamedWithoutSource {
             context_1: "whatever",
             context_2: 4399,
         }
@@ -61,15 +61,15 @@ fn derive_enum() {
             context_2: 4399
         },
     );
-    assert_eq!(EmptyNamedContext.build(), Error::EmptyNamed {});
+    assert_eq!(EmptyNamed.build(), Error::EmptyNamed {});
     assert_eq!(
-        UnnamedWithSourceContext("anyhow", 360).into_error("blah"),
+        UnnamedWithSource("anyhow", 360).into_error("blah"),
         Error::UnnamedWithSource("anyhow".to_owned(), "blah", 360),
     );
     assert_eq!(
-        UnnamedWithoutSourceContext("failed", 1314).build(),
+        UnnamedWithoutSource("failed", 1314).build(),
         Error::UnnamedWithoutSource("failed".to_owned(), 1314),
     );
-    assert_eq!(EmptyUnnamedContext.build(), Error::EmptyUnnamed());
-    assert_eq!(UnitContext.build(), Error::Unit);
+    assert_eq!(EmptyUnnamed.build(), Error::EmptyUnnamed());
+    assert_eq!(Unit.build(), Error::Unit);
 }

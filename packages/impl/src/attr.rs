@@ -144,7 +144,7 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
                 attrs.skip = Some(parse_bool(input)?);
             } else if lookhead.peek(kw::suffix) {
                 check_dup!(suffix);
-                attrs.suffix = parse_thisctx_arg(input, true)?;
+                attrs.suffix = Some(parse_thisctx_arg(input, false)?.unwrap_or(Suffix::Flag(true)));
             } else if lookhead.peek(kw::visibility) {
                 check_dup!(visibility);
                 attrs.visibility = parse_thisctx_arg(input, true)?;

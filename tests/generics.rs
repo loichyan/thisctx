@@ -56,6 +56,6 @@ struct GenericDefault<T1, T2>(T1, String, T2);
 
 #[test]
 fn generic_order() {
-    let _ = GenricOrderContext::<String, i32>(0, String::default());
-    let _ = GenericDefaultContext::<i32, ()>(0, String::default(), ());
+    let _ = GenricOrder::<String, i32>(0, String::default());
+    let _ = GenericDefault::<i32, ()>(0, String::default(), ());
 }

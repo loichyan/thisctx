@@ -57,9 +57,9 @@ struct Struct(String);
 
 #[test]
 fn attr_into() {
-    let _: Error = Variant1Context("What").build();
-    let _: Error2 = Variant1Context("is").build();
-    let _: Error = Variant2Context("going").build();
+    let _: Error = Variant1("What").build();
+    let _: Error2 = Variant1("is").build();
+    let _: Error = Variant2("going").build();
     let _: Error = StructContext("on").build();
     let _: Error2 = StructContext("?").build();
 }

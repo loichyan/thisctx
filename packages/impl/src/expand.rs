@@ -50,6 +50,10 @@ pub fn impl_struct(input: Struct) -> Option<TokenStream> {
     if input.attrs.is_transparent() {
         return None;
     }
+    let mut options = ContextOptions::from_attrs([&input.attrs].iter().map(<_>::clone));
+    if options.suffix.is_none() {
+        options.suffix = Some(&Suffix::Flag(true));
+    }
     Some(
         input.attrs.with_module(
             input.original,
@@ -57,7 +61,7 @@ pub fn impl_struct(input: Struct) -> Option<TokenStream> {
                 input: input.original,
                 variant: None,
                 surround: Surround::from_fields(&input.data.fields),
-                options: ContextOptions::from_attrs([&input.attrs].iter().map(<_>::clone)),
+                options,
                 ident: &input.original.ident,
                 fields: &input.fields,
             }
@@ -152,13 +156,13 @@ impl<'a> ContextOptions<'a> {
         macro_rules! update_options {
             ($attrs:expr=> ) => {};
             ($attrs:expr=> $attr:ident, $($rest:tt)*) => {
-                if let Some(attr) = $attrs.thisctx.$attr.as_ref() {
+                if let Some(attr) = $attrs.thisctx.$attr {
                     new.$attr = Some(attr);
                 }
                 update_options!($attrs=> $($rest)*);
             };
-            ($attrs:expr=> ?$attr:ident, $($rest:tt)*) => {
-                if let Some(&attr) = $attrs.thisctx.$attr.as_ref() {
+            ($attrs:expr=> &$attr:ident, $($rest:tt)*) => {
+                if let Some(attr) = $attrs.thisctx.$attr.as_ref() {
                     new.$attr = Some(attr);
                 }
                 update_options!($attrs=> $($rest)*);
@@ -175,10 +179,10 @@ impl<'a> ContextOptions<'a> {
         }
         for attrs in attrs_iter {
             update_options!(attrs=>
-                suffix,
-                visibility,
-                ?no_generic,
-                ?no_unit,
+                no_generic,
+                no_unit,
+                &suffix,
+                &visibility,
                 *into,
             );
         }
@@ -276,11 +280,11 @@ impl<'a> Context<'a> {
             let ident = self.ident;
             let span = self.ident.span();
             match self.options.suffix {
-                Some(Suffix::Flag(true)) | None => {
+                Some(Suffix::Flag(true)) => {
                     format_ident!("{}{}", ident, DEFAULT_SUFFIX, span = span)
                 }
                 Some(Suffix::Ident(suffix)) => format_ident!("{}{}", ident, suffix, span = span),
-                Some(Suffix::Flag(false)) => self.ident.clone(),
+                _ => self.ident.clone(),
             }
         };
 

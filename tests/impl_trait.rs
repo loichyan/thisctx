@@ -17,7 +17,7 @@ enum Error {
 #[test]
 fn from_context() {
     assert_eq!(
-        Error::from(NoneSourceContext("Hello, thisctx!")),
+        Error::from(NoneSource("Hello, thisctx!")),
         Error::NoneSource("Hello, thisctx!"),
     );
 }
@@ -25,11 +25,11 @@ fn from_context() {
 #[test]
 fn into_error() {
     assert_eq!(
-        NoneSourceContext("Hello, world!").build(),
+        NoneSource("Hello, world!").build(),
         Error::NoneSource("Hello, world!"),
     );
     assert_eq!(
-        NoneSourceContext("Hello, world!").fail::<()>(),
+        NoneSource("Hello, world!").fail::<()>(),
         Err(Error::NoneSource("Hello, world!")),
     );
 }

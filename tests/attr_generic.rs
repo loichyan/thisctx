@@ -10,5 +10,5 @@ enum Error {
 
 #[test]
 fn attr_generic() {
-    let _ = NoGeneratedGenericOnFieldContext::<&str, &str>("What's", "going".to_owned(), "on");
+    let _ = NoGeneratedGenericOnField::<&str, &str>("What's", "going".to_owned(), "on");
 }

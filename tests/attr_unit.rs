@@ -9,6 +9,6 @@ enum Error {
 
 #[test]
 fn attr_unit() {
-    NotUnitContext().build();
-    UnitContext.build();
+    NotUnit().build();
+    Unit.build();
 }

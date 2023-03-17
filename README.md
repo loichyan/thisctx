@@ -21,7 +21,7 @@ pub enum Error {
 }
 
 fn load_config(path: &Path) -> Result<String, Error> {
-    std::fs::read_to_string(path).context(IoFaildContext { path })
+    std::fs::read_to_string(path).context(IoFaild { path })
 }
 ```
 

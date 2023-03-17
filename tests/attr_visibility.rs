@@ -17,6 +17,6 @@ mod error {
 
 #[test]
 fn attr_visibility() {
-    error::PubVariantContext(0).build();
-    error::PubCrateVariantContext(0).build();
+    error::PubVariant(0).build();
+    error::PubCrateVariant(0).build();
 }

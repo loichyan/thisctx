@@ -1,11 +1,10 @@
 use thisctx::{IntoError, WithContext};
 
 #[derive(Debug, WithContext)]
-#[thisctx(suffix(true))]
 #[allow(clippy::enum_variant_names)]
 enum Error {
+    #[thisctx(suffix)]
     DefaultSuffix,
-    #[thisctx(suffix(false))]
     NoSuffix,
     #[thisctx(suffix(Thisctx))]
     CustomSuffix,

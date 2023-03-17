@@ -148,7 +148,7 @@ impl<'a, C> GenericsAnalyzer<'a, C> {
                 .bounds
                 .entries
                 .get_mut(*v.get())
-                .unwrap_or_else(|| unreachable!())
+                .unwrap()
                 .1
                 .params
                 .extend(bounds.map(T::into)),
@@ -286,11 +286,7 @@ impl<'a, C> GenericsMap<'a, C> {
                 self.entries.push((name, <_>::default()));
             }
         };
-        &mut self
-            .entries
-            .get_mut(index)
-            .unwrap_or_else(|| unreachable!())
-            .1
+        &mut self.entries.get_mut(index).unwrap().1
     }
 
     pub fn get_mut<N>(&mut self, name: N) -> Option<(GenericName<'a>, &mut GenericBounds<'a, C>)>
