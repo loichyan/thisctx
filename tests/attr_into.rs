@@ -1,46 +1,23 @@
 use thisctx::{IntoError, WithContext};
+use thiserror::Error;
 
-#[derive(Debug, WithContext)]
+#[derive(Debug, Error)]
 enum Error {
     #[error(transparent)]
-    FromEnum(Enum),
+    FromEnum(#[from] Enum),
     #[error(transparent)]
-    FromStruct(Struct),
+    FromStruct(#[from] Struct),
 }
 
-impl From<Enum> for Error {
-    fn from(t: Enum) -> Self {
-        Error::FromEnum(t)
-    }
-}
-
-impl From<Struct> for Error {
-    fn from(t: Struct) -> Self {
-        Error::FromStruct(t)
-    }
-}
-
-#[derive(Debug, WithContext)]
+#[derive(Debug, Error)]
 enum Error2 {
     #[error(transparent)]
-    FromEnum(Enum),
+    FromEnum(#[from] Enum),
     #[error(transparent)]
-    FromStruct(Struct),
+    FromStruct(#[from] Struct),
 }
 
-impl From<Enum> for Error2 {
-    fn from(t: Enum) -> Self {
-        Error2::FromEnum(t)
-    }
-}
-
-impl From<Struct> for Error2 {
-    fn from(t: Struct) -> Self {
-        Error2::FromStruct(t)
-    }
-}
-
-#[derive(Debug, WithContext)]
+#[derive(Debug, Error, WithContext)]
 #[thisctx(into(Error))]
 enum Enum {
     #[error("{0}")]
@@ -50,7 +27,7 @@ enum Enum {
     Variant2(String),
 }
 
-#[derive(Debug, WithContext)]
+#[derive(Debug, Error, WithContext)]
 #[thisctx(into(Error), into(Error2))]
 #[error("{0}")]
 struct Struct(String);

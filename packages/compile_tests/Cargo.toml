@@ -8,6 +8,7 @@ rust-version = "1.45"
 
 [dependencies]
 rustversion = "1.0"
+thiserror = "1.0"
 trybuild = "1.0"
 
 [dependencies.thisctx]

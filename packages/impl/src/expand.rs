@@ -47,7 +47,7 @@ pub fn derive(node: &DeriveInput) -> Result<TokenStream> {
 }
 
 pub fn impl_struct(input: Struct) -> Option<TokenStream> {
-    if input.attrs.is_transparent() {
+    if input.attrs.skip() == Some(true) {
         return None;
     }
     let mut options = ContextOptions::from_attrs([&input.attrs].iter().map(<_>::clone));
@@ -64,6 +64,7 @@ pub fn impl_struct(input: Struct) -> Option<TokenStream> {
                 options,
                 ident: &input.original.ident,
                 fields: &input.fields,
+                transparent: input.attrs.is_transparent(),
             }
             .impl_all(),
         ),
@@ -82,7 +83,7 @@ pub fn impl_enum(input: Enum) -> TokenStream {
 
 impl<'a> Enum<'a> {
     fn impl_variant(&self, variant: &Variant) -> Option<TokenStream> {
-        if variant.attrs.thisctx.skip == Some(true) || variant.attrs.is_transparent() {
+        if variant.attrs.skip().or(self.attrs.skip()) == Some(true) {
             return None;
         }
         Some(
@@ -95,6 +96,7 @@ impl<'a> Enum<'a> {
                 ),
                 ident: &variant.original.ident,
                 fields: &variant.fields,
+                transparent: variant.attrs.is_transparent(),
             }
             .impl_all(),
         )
@@ -107,6 +109,10 @@ impl<'a> Attrs<'a> {
             .as_ref()
             .and_then(|e| e.transparent.as_ref())
             .is_some()
+    }
+
+    fn skip(&self) -> Option<bool> {
+        self.thisctx.skip
     }
 
     fn with_module(&self, input: &DeriveInput, content: TokenStream) -> TokenStream {
@@ -132,6 +138,7 @@ struct Context<'a> {
     options: ContextOptions<'a>,
     ident: &'a Ident,
     fields: &'a [Field<'a>],
+    transparent: bool,
 }
 
 #[derive(Default)]
@@ -193,6 +200,9 @@ impl<'a> ContextOptions<'a> {
 
 impl<'a> Context<'a> {
     fn find_source_field(&self) -> usize {
+        if self.transparent {
+            return 0;
+        }
         for (i, field) in self.fields.iter().enumerate() {
             if field.attrs.source.is_some() {
                 return i;
@@ -240,10 +250,7 @@ impl<'a> Context<'a> {
                     bounds.context.selected = true;
                 });
                 generated = generated
-                    && !matches!(
-                        field.attrs.thisctx.no_generic.or(self.options.no_generic),
-                        Some(true),
-                    );
+                    && field.attrs.thisctx.no_generic.or(self.options.no_generic) != Some(true);
                 field_ty = if generated {
                     // Generate a new type for conversion.
                     let generated = if let FieldName::Named(name) = field_name {
@@ -294,7 +301,7 @@ impl<'a> Context<'a> {
             let generics1 = quote_analyzed_generics(&generics_analyzer, true, true);
             let generics2 = quote_generated_generics(&fields_analyzer, true);
             let fields = quote_context_fileds(&fields_analyzer);
-            let body = if is_unit && !matches!(self.options.no_unit, Some(true)) {
+            let body = if is_unit && self.options.no_unit != Some(true) {
                 Surround::None
             } else {
                 self.surround
