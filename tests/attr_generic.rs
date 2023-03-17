@@ -1,12 +1,10 @@
 use thisctx::WithContext;
 
 #[derive(WithContext)]
-#[thisctx(generic(false))]
 enum Error {
-    #[thisctx(generic(true))]
     GeneratedGeneric(String),
-    #[thisctx(generic(true))]
-    NoGeneratedGenericOnField(String, #[thisctx(generic(false))] String, String),
+    NoGeneratedGenericOnField(String, #[thisctx(no_generic)] String, String),
+    #[thisctx(no_generic)]
     NoGeneratedGeneric(String),
 }
 

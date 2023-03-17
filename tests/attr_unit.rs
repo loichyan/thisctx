@@ -1,9 +1,8 @@
 use thisctx::{IntoError, WithContext};
 
 #[derive(Debug, WithContext)]
-#[thisctx(unit(true))]
 enum Error {
-    #[thisctx(unit(false))]
+    #[thisctx(no_unit)]
     NotUnit(),
     Unit(),
 }

@@ -1,4 +1,5 @@
 use proc_macro2::TokenStream;
+use quote::ToTokens;
 use syn::{
     parenthesized,
     parse::{Nothing, Parse, ParseStream},
@@ -9,13 +10,13 @@ mod kw {
     use syn::custom_keyword;
 
     custom_keyword!(attr);
-    custom_keyword!(generic);
     custom_keyword!(into);
     custom_keyword!(module);
+    custom_keyword!(no_generic);
+    custom_keyword!(no_unit);
     custom_keyword!(skip);
     custom_keyword!(suffix);
     custom_keyword!(transparent);
-    custom_keyword!(unit);
     custom_keyword!(visibility);
 }
 
@@ -28,14 +29,14 @@ pub struct Attrs<'a> {
 
 #[derive(Default)]
 pub struct AttrThisctx {
-    pub visibility: Option<Visibility>,
-    pub suffix: Option<Suffix>,
-    pub unit: Option<bool>,
     pub attr: Vec<TokenStream>,
     pub into: Vec<Type>,
-    pub generic: Option<bool>,
-    pub skip: Option<bool>,
     pub module: Option<Ident>,
+    pub no_generic: Option<bool>,
+    pub no_unit: Option<bool>,
+    pub skip: Option<bool>,
+    pub suffix: Option<Suffix>,
+    pub visibility: Option<Visibility>,
 }
 
 #[derive(Default)]
@@ -120,32 +121,33 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
                 break;
             }
             let lookhead = input.lookahead1();
-            if lookhead.peek(kw::visibility) {
-                check_dup!(visibility);
-                attrs.visibility = parse_thisctx_arg(input, true)?;
-            } else if lookhead.peek(Token![pub]) {
+
+            if lookhead.peek(Token![pub]) {
                 attrs.visibility = Some(check_dup!(visibility, Visibility));
-            } else if lookhead.peek(kw::suffix) {
-                check_dup!(suffix);
-                attrs.suffix = parse_thisctx_arg(input, true)?;
-            } else if lookhead.peek(kw::unit) {
-                check_dup!(unit);
-                attrs.unit = Some(parse_bool(input)?);
             } else if lookhead.peek(kw::attr) {
                 input.parse::<kw::attr>()?;
                 attrs.attr.push(parse_thisctx_arg(input, true)?.unwrap());
             } else if lookhead.peek(kw::into) {
                 input.parse::<kw::into>()?;
                 attrs.into.push(parse_thisctx_arg(input, true)?.unwrap());
-            } else if lookhead.peek(kw::generic) {
-                check_dup!(generic);
-                attrs.generic = Some(parse_bool(input)?);
-            } else if lookhead.peek(kw::skip) {
-                check_dup!(skip);
-                attrs.skip = Some(parse_bool(input)?);
             } else if lookhead.peek(kw::module) {
                 check_dup!(module);
                 attrs.module = parse_thisctx_arg(input, true)?;
+            } else if lookhead.peek(kw::no_generic) {
+                check_dup!(no_generic);
+                attrs.no_generic = Some(parse_bool(input)?);
+            } else if lookhead.peek(kw::no_unit) {
+                check_dup!(no_unit);
+                attrs.no_unit = Some(parse_bool(input)?);
+            } else if lookhead.peek(kw::skip) {
+                check_dup!(skip);
+                attrs.skip = Some(parse_bool(input)?);
+            } else if lookhead.peek(kw::suffix) {
+                check_dup!(suffix);
+                attrs.suffix = parse_thisctx_arg(input, true)?;
+            } else if lookhead.peek(kw::visibility) {
+                check_dup!(visibility);
+                attrs.visibility = parse_thisctx_arg(input, true)?;
             } else {
                 return Err(lookhead.error());
             }
@@ -158,10 +160,28 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
     })
 }
 
+struct BoolArg(Option<LitBool>);
+
+impl BoolArg {
+    fn into_bool(self) -> bool {
+        self.0.map(|t| t.value).unwrap_or(true)
+    }
+}
+
+impl Parse for BoolArg {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(Self(parse_thisctx_arg::<LitBool>(input, false)?))
+    }
+}
+
+impl ToTokens for BoolArg {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.0.to_tokens(tokens)
+    }
+}
+
 fn parse_bool(input: ParseStream) -> Result<bool> {
-    Ok(parse_thisctx_arg::<LitBool>(input, false)?
-        .map(|flag| flag.value)
-        .unwrap_or(true))
+    Ok(input.parse::<BoolArg>()?.into_bool())
 }
 
 fn parse_thisctx_arg<T: Parse>(input: ParseStream, required: bool) -> Result<Option<T>> {

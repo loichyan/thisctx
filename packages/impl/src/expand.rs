@@ -132,12 +132,12 @@ struct Context<'a> {
 
 #[derive(Default)]
 struct ContextOptions<'a> {
-    visibility: Option<&'a Visibility>,
-    suffix: Option<&'a Suffix>,
-    unit: Option<bool>,
-    into: Vec<&'a Type>,
     attr: TokenStream,
-    generic: Option<bool>,
+    into: Vec<&'a Type>,
+    no_generic: Option<bool>,
+    no_unit: Option<bool>,
+    suffix: Option<&'a Suffix>,
+    visibility: Option<&'a Visibility>,
 }
 
 #[derive(Default)]
@@ -157,13 +157,13 @@ impl<'a> ContextOptions<'a> {
                 }
                 update_options!($attrs=> $($rest)*);
             };
-            ($attrs:expr=> *$attr:ident, $($rest:tt)*) => {
+            ($attrs:expr=> ?$attr:ident, $($rest:tt)*) => {
                 if let Some(&attr) = $attrs.thisctx.$attr.as_ref() {
                     new.$attr = Some(attr);
                 }
                 update_options!($attrs=> $($rest)*);
             };
-            ($attrs:expr=> +$attr:ident, $($rest:tt)*) => {
+            ($attrs:expr=> *$attr:ident, $($rest:tt)*) => {
                 new.$attr.extend($attrs.thisctx.$attr.iter());
                 update_options!($attrs=> $($rest)*);
             };
@@ -175,11 +175,11 @@ impl<'a> ContextOptions<'a> {
         }
         for attrs in attrs_iter {
             update_options!(attrs=>
-                visibility,
                 suffix,
-                *unit,
-                +into,
-                *generic,
+                visibility,
+                ?no_generic,
+                ?no_unit,
+                *into,
             );
         }
 
@@ -237,8 +237,8 @@ impl<'a> Context<'a> {
                 });
                 generated = generated
                     && !matches!(
-                        field.attrs.thisctx.generic.or(self.options.generic),
-                        Some(false),
+                        field.attrs.thisctx.no_generic.or(self.options.no_generic),
+                        Some(true),
                     );
                 field_ty = if generated {
                     // Generate a new type for conversion.
@@ -290,7 +290,7 @@ impl<'a> Context<'a> {
             let generics1 = quote_analyzed_generics(&generics_analyzer, true, true);
             let generics2 = quote_generated_generics(&fields_analyzer, true);
             let fields = quote_context_fileds(&fields_analyzer);
-            let body = if is_unit && !matches!(self.options.unit, Some(false)) {
+            let body = if is_unit && !matches!(self.options.no_unit, Some(true)) {
                 Surround::None
             } else {
                 self.surround
