@@ -67,17 +67,14 @@
 //!
 //! ```
 //! # use thisctx::WithContext;
-//! # use thiserror::Error;
-//! #[derive(Debug, Error, WithContext)]
+//! #[derive(WithContext)]
 //! #[thisctx(skip)]
 //! enum Error {
 //!     // This variant will be ignored since `skip=true` is inherited.
-//!     #[error(transparent)]
-//!     Io(std::io::Error),
+//!     Io(#[source] std::io::Error),
 //!     // This variant will be processed.
 //!     #[thisctx(no_skip)]
-//!     #[error(transparent)]
-//!     ParseInt(std::num::ParseIntError),
+//!     ParseInt(#[source] std::num::ParseIntError),
 //! }
 //! ```
 //!
@@ -96,7 +93,6 @@
 //! ```
 //!
 //! Expanded example:
-//!
 //!
 //! ```
 //! // The order of attributes (and other options) is guaranteed by the order of
@@ -120,9 +116,7 @@
 //! ```
 //! # use std::path::PathBuf;
 //! # use thisctx::WithContext;
-//! # use thiserror::Error;
-//! #[derive(Debug, Error, WithContext)]
-//! #[error("IO failed at '{1}'")]
+//! #[derive(WithContext)]
 //! struct Error(#[source] std::io::Error, PathBuf);
 //! ```
 //!
@@ -131,10 +125,7 @@
 //! ```
 //! # use std::path::PathBuf;
 //! # use thisctx::{IntoError, WithContext};
-//! # use thiserror::Error;
-//! # #[derive(Debug, Error)]
-//! # #[error("IO failed at '{1}'")]
-//! # struct Error(#[source] std::io::Error, PathBuf);
+//! # struct Error(std::io::Error, PathBuf);
 //! struct ErrorContext<T1 = PathBuf>(T1);
 //!
 //! impl<T1> IntoError<Error> for ErrorContext<T1>
@@ -226,24 +217,20 @@
 //!
 //! ```
 //! # use thisctx::{IntoError, WithContext};
-//! # use thiserror::Error;
 //! // Probably an error defined in another crate.
-//! #[derive(Debug, Error)]
 //! enum RemoteError {
-//!     #[error("Custom: {0}")]
 //!     Custom(String),
 //! }
 //!
 //! // From<T> is required by #[thisctx(into)]
 //! impl From<MyError> for RemoteError {
 //!     fn from(e: MyError) -> Self {
-//!         Self::Custom(e.to_string())
+//!         Self::Custom(e.0)
 //!     }
 //! }
 //!
-//! #[derive(Debug, Error, WithContext)]
+//! #[derive(WithContext)]
 //! #[thisctx(into(RemoteError))]
-//! #[error("MyError: {0}")]
 //! struct MyError(String);
 //!
 //! let _: MyError = MyErrorContext("anyhow").build();
@@ -257,14 +244,11 @@
 //!
 //! ```
 //! # use thisctx::WithContext;
-//! # use thiserror::Error;
-//! #[derive(Debug, Error, WithContext)]
+//! #[derive(WithContext)]
 //! #[thisctx(module(context))]
 //! pub enum Error {
-//!     #[error(transparent)]
-//!     Io(std::io::Error),
-//!     #[error(transparent)]
-//!     ParseInt(std::num::ParseIntError),
+//!     Io(#[source] std::io::Error),
+//!     ParseInt(#[source] std::num::ParseIntError),
 //! }
 //! # fn main() {}
 //! ```
@@ -278,9 +262,9 @@
 //! }
 //! ```
 //!
-//! You can also set this option to `true` to use the snake case of the container
-//! name as the module name, e.g. `#[thisctx(module)]` on `enum MyError` is equal to
-//! `#[thisctx(module(my_error))]`.
+//! > You can also set this option to `true` to use the snake case of the container
+//! > name as the module name, e.g. `#[thisctx(module)]` on `enum MyError` is equal
+//! > to `#[thisctx(module(my_error))]`.
 //!
 //! ## `thisctx.skip`
 //!
@@ -288,21 +272,18 @@
 //!
 //! ```
 //! # use thisctx::WithContext;
-//! # use thiserror::Error;
-//! #[derive(Debug, Error, WithContext)]
+//! #[derive(WithContext)]
 //! enum Error {
 //!     #[thisctx(skip)]
-//!     #[error(transparent)]
-//!     Io(std::io::Error),
-//!     #[error(transparent)]
-//!     ParseInt(std::num::ParseIntError),
+//!     Io(#[source] std::io::Error),
+//!     ParseInt(#[source] std::num::ParseIntError),
 //! }
 //! ```
 //!
 //! Expanded example:
 //!
 //! ```
-//! pub struct ParseInt;
+//! struct ParseInt;
 //! ```
 //!
 //! ## `thisctx.suffix`
@@ -314,26 +295,69 @@
 //!
 //! ```
 //! # use thisctx::WithContext;
-//! # use thiserror::Error;
-//! #[derive(Debug, Error, WithContext)]
+//! #[derive(WithContext)]
 //! #[thisctx(suffix(Error))]
 //! enum Error {
-//!     #[error(transparent)]
-//!     Io(std::io::Error),
-//!     #[error(transparent)]
-//!     ParseInt(std::num::ParseIntError),
+//!     Io(#[source] std::io::Error),
+//!     ParseInt(#[source] std::num::ParseIntError),
 //! }
 //! ```
 //!
 //! Expanded example:
 //!
 //! ```
-//! pub struct IoError;
-//! pub struct ParseIntError;
+//! struct IoError;
+//! struct ParseIntError;
 //! ```
 //!
-//! The value `true` means that the default suffix is used `Context` and the value
-//! `false` will remove the suffix from the generated type.
+//! > The value `true` means to use the default suffix `Context` and the value
+//! > `false` will remove the suffix from the generated type.
+//!
+//! ## `thisctx.unit`
+//!
+//! In Rust, the parentheses are required to construct a tuple struct even if it's
+//! empty. `thisctx` will convert an empty struct to a unit struct by default. This
+//! allows you use the struct name to create a new context without having to add
+//! parentheses each time and can be disabled by passing `#[thisctx(no_unit)]`.
+//!
+//! ```rust
+//! # use thisctx::WithContext;
+//! #[derive(WithContext)]
+//! enum Error {
+//!     #[thisctx(no_unit)]
+//!     Io(#[source] std::io::Error),
+//!     ParseInt(#[source] std::num::ParseIntError),
+//! }
+//! ```
+//!
+//! Expanded example:
+//!
+//! ```rust
+//! struct IoError();
+//! struct ParseIntError;
+//! ```
+//!
+//! ## `thisctx.visibility`
+//!
+//! This option is used to change the visibility of the generated types and fields
+//! and can be written in shorthand as `#[pub(...)]`.
+//!
+//! ```rust
+//! # use thisctx::WithContext;
+//! #[derive(WithContext)]
+//! #[thisctx(pub(crate))]
+//! pub enum Error {
+//!     Io(#[source] std::io::Error),
+//!     ParseInt(#[source] std::num::ParseIntError),
+//! }
+//! ```
+//!
+//! Expanded example:
+//!
+//! ```rust
+//! pub(crate) struct IoError;
+//! pub(crate) struct ParseIntError;
+//! ```
 //!
 //! # 📝 Todo
 //!
@@ -344,7 +368,7 @@
 //! - [x] Support transparent error.
 //! - [x] Support generics.
 //! - [x] Simplify the derive implementation.
-//! - [ ] More documentation.
+//! - [x] More documentation.
 //! - [ ] More tests.
 //!
 //! # 🚩 Minimal suppoted Rust version

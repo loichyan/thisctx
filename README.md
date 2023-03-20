@@ -65,16 +65,14 @@ An inherited option uses the value of its parent node if no value is provided,
 for example:
 
 ```rust
-#[derive(Debug, Error, WithContext)]
+#[derive(WithContext)]
 #[thisctx(skip)]
 enum Error {
     // This variant will be ignored since `skip=true` is inherited.
-    #[error(transparent)]
-    Io(std::io::Error),
+    Io(#[source] std::io::Error),
     // This variant will be processed.
     #[thisctx(no_skip)]
-    #[error(transparent)]
-    ParseInt(std::num::ParseIntError),
+    ParseInt(#[source] std::num::ParseIntError),
 }
 ```
 
@@ -92,7 +90,6 @@ enum Error {
 ```
 
 Expanded example:
-
 
 ```rust
 // The order of attributes (and other options) is guaranteed by the order of
@@ -114,8 +111,7 @@ field will be assigned to `IntoError::Source` and will not appear in the
 generated context types.
 
 ```rust
-#[derive(Debug, Error, WithContext)]
-#[error("IO failed at '{1}'")]
+#[derive(WithContext)]
 struct Error(#[source] std::io::Error, PathBuf);
 ```
 
@@ -201,22 +197,19 @@ An option for converting generated types to a remote error type.
 
 ```rust
 // Probably an error defined in another crate.
-#[derive(Debug, Error)]
 enum RemoteError {
-    #[error("Custom: {0}")]
     Custom(String),
 }
 
 // From<T> is required by #[thisctx(into)]
 impl From<MyError> for RemoteError {
     fn from(e: MyError) -> Self {
-        Self::Custom(e.to_string())
+        Self::Custom(e.0)
     }
 }
 
-#[derive(Debug, Error, WithContext)]
+#[derive(WithContext)]
 #[thisctx(into(RemoteError))]
-#[error("MyError: {0}")]
 struct MyError(String);
 
 let _: MyError = MyErrorContext("anyhow").build();
@@ -229,13 +222,11 @@ let _: RemoteError = MyErrorContext("anyhow").build();
 This option allows you put all generated context types into a single module.
 
 ```rust
-#[derive(Debug, Error, WithContext)]
+#[derive(WithContext)]
 #[thisctx(module(context))]
 pub enum Error {
-    #[error(transparent)]
-    Io(std::io::Error),
-    #[error(transparent)]
-    ParseInt(std::num::ParseIntError),
+    Io(#[source] std::io::Error),
+    ParseInt(#[source] std::num::ParseIntError),
 }
 ```
 
@@ -248,29 +239,27 @@ pub mod context {
 }
 ```
 
-You can also set this option to `true` to use the snake case of the container
-name as the module name, e.g. `#[thisctx(module)]` on `enum MyError` is equal to
-`#[thisctx(module(my_error))]`.
+> You can also set this option to `true` to use the snake case of the container
+> name as the module name, e.g. `#[thisctx(module)]` on `enum MyError` is equal
+> to `#[thisctx(module(my_error))]`.
 
 ### `thisctx.skip`
 
 This option is used to skip generating context types for the specified variant.
 
 ```rust
-#[derive(Debug, Error, WithContext)]
+#[derive(WithContext)]
 enum Error {
     #[thisctx(skip)]
-    #[error(transparent)]
-    Io(std::io::Error),
-    #[error(transparent)]
-    ParseInt(std::num::ParseIntError),
+    Io(#[source] std::io::Error),
+    ParseInt(#[source] std::num::ParseIntError),
 }
 ```
 
 Expanded example:
 
 ```rust
-pub struct ParseInt;
+struct ParseInt;
 ```
 
 ### `thisctx.suffix`
@@ -281,25 +270,67 @@ By default, only `struct`s will be added the builtin suffix `Context` since the
 generated type without a suffix will confict with the error type.
 
 ```rust
-#[derive(Debug, Error, WithContext)]
+#[derive(WithContext)]
 #[thisctx(suffix(Error))]
 enum Error {
-    #[error(transparent)]
-    Io(std::io::Error),
-    #[error(transparent)]
-    ParseInt(std::num::ParseIntError),
+    Io(#[source] std::io::Error),
+    ParseInt(#[source] std::num::ParseIntError),
 }
 ```
 
 Expanded example:
 
 ```rust
-pub struct IoError;
-pub struct ParseIntError;
+struct IoError;
+struct ParseIntError;
 ```
 
-The value `true` means that the default suffix is used `Context` and the value
-`false` will remove the suffix from the generated type.
+> The value `true` means to use the default suffix `Context` and the value
+> `false` will remove the suffix from the generated type.
+
+### `thisctx.unit`
+
+In Rust, the parentheses are required to construct a tuple struct even if it's
+empty. `thisctx` will convert an empty struct to a unit struct by default. This
+allows you use the struct name to create a new context without having to add
+parentheses each time and can be disabled by passing `#[thisctx(no_unit)]`.
+
+```rust
+#[derive(WithContext)]
+enum Error {
+    #[thisctx(no_unit)]
+    Io(#[source] std::io::Error),
+    ParseInt(#[source] std::num::ParseIntError),
+}
+```
+
+Expanded example:
+
+```rust
+struct IoError();
+struct ParseIntError;
+```
+
+### `thisctx.visibility`
+
+This option is used to change the visibility of the generated types and fields
+and can be written in shorthand as `#[pub(...)]`.
+
+```rust
+#[derive(WithContext)]
+#[thisctx(pub(crate))]
+pub enum Error {
+    Io(#[source] std::io::Error),
+    ParseInt(#[source] std::num::ParseIntError),
+}
+```
+
+Expanded example:
+
+```rust
+pub(crate) struct IoError;
+pub(crate) struct ParseIntError;
+```
 
 ## 📝 Todo
 
@@ -310,7 +341,7 @@ The value `true` means that the default suffix is used `Context` and the value
 - [x] Support transparent error.
 - [x] Support generics.
 - [x] Simplify the derive implementation.
-- [ ] More documentation.
+- [x] More documentation.
 - [ ] More tests.
 
 ## 🚩 Minimal suppoted Rust version
