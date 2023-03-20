@@ -4,32 +4,16 @@ use syn::{
     Type, WherePredicate,
 };
 
-pub struct GenericsAnalyzer<'a, C> {
-    pub bounds: GenericsMap<'a, C>,
+#[derive(Default)]
+pub struct GenericsAnalyzer<'a> {
+    pub bounds: GenericsMap<'a>,
     pub extra_bounds: Vec<&'a WherePredicate>,
 }
 
-impl<C> Default for GenericsAnalyzer<'_, C> {
-    fn default() -> Self {
-        Self {
-            bounds: <_>::default(),
-            extra_bounds: <_>::default(),
-        }
-    }
-}
-
-pub struct GenericsMap<'a, C> {
+#[derive(Default)]
+pub struct GenericsMap<'a> {
     indices: Map<GenericName<'a>, usize>,
-    entries: Vec<(GenericName<'a>, GenericBounds<'a, C>)>,
-}
-
-impl<C> Default for GenericsMap<'_, C> {
-    fn default() -> Self {
-        Self {
-            indices: <_>::default(),
-            entries: <_>::default(),
-        }
-    }
+    entries: Vec<(GenericName<'a>, GenericBounds<'a>)>,
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -51,10 +35,10 @@ impl<'a> From<&'a Lifetime> for GenericName<'a> {
 }
 
 #[derive(Default)]
-pub struct GenericBounds<'a, C> {
+pub struct GenericBounds<'a> {
     pub params: Vec<TypeParamBound<'a>>,
     pub const_ty: Option<&'a Type>,
-    pub context: C,
+    pub selected: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -84,19 +68,20 @@ impl<'a> From<&'a syn::TypeParamBound> for TypeParamBound<'a> {
     }
 }
 
-impl<'a, C> GenericsAnalyzer<'a, C> {
+impl<'a> GenericsAnalyzer<'a> {
     pub fn intersects(
         &mut self,
         ty: &'a Type,
-        cb: impl FnMut(GenericName<'a>, &mut GenericBounds<'a, C>),
+        cb: impl FnMut(GenericName<'a>, &mut GenericBounds<'a>),
     ) {
-        ImplIntersects { analyzer: self, cb }.ty(ty);
+        ImplIntersects {
+            analyzer: self,
+            cb: Box::new(cb),
+        }
+        .ty(ty);
     }
 
-    pub fn from_syn(generics: &'a Generics) -> Self
-    where
-        C: Default,
-    {
+    pub fn from_syn(generics: &'a Generics) -> Self {
         let mut new = Self::default();
         // Collect bounds from type parameter.
         for param in generics.params.iter() {
@@ -140,7 +125,6 @@ impl<'a, C> GenericsAnalyzer<'a, C> {
     ) where
         N: Into<GenericName<'a>>,
         T: Into<TypeParamBound<'a>>,
-        C: Default,
     {
         match self.bounds.indices.entry(name.into()) {
             MapEntry::Vacant(_) => self.extra_bounds.push(predicate),
@@ -159,7 +143,6 @@ impl<'a, C> GenericsAnalyzer<'a, C> {
     where
         N: Into<GenericName<'a>>,
         T: Into<TypeParamBound<'a>>,
-        C: Default,
     {
         self.bounds
             .insert_or_default(name.into())
@@ -168,15 +151,12 @@ impl<'a, C> GenericsAnalyzer<'a, C> {
     }
 }
 
-struct ImplIntersects<'a, 'b, C, F> {
-    analyzer: &'b mut GenericsAnalyzer<'a, C>,
-    cb: F,
+struct ImplIntersects<'a, 'b> {
+    analyzer: &'b mut GenericsAnalyzer<'a>,
+    cb: Box<dyn 'b + FnMut(GenericName<'a>, &mut GenericBounds<'a>)>,
 }
 
-impl<'a, 'b, C, F> ImplIntersects<'a, 'b, C, F>
-where
-    F: FnMut(GenericName<'a>, &mut GenericBounds<'a, C>),
-{
+impl<'a, 'b> ImplIntersects<'a, 'b> {
     fn ty(&mut self, ty: &'a Type) {
         match ty {
             Type::Array(ty) => {
@@ -266,15 +246,14 @@ where
     }
 }
 
-impl<'a, C> GenericsMap<'a, C> {
-    pub fn iter(&self) -> impl Iterator<Item = (GenericName<'a>, &GenericBounds<'a, C>)> {
+impl<'a> GenericsMap<'a> {
+    pub fn iter(&self) -> impl Iterator<Item = (GenericName<'a>, &GenericBounds<'a>)> {
         self.entries.iter().map(|(name, bounds)| (*name, bounds))
     }
 
-    fn insert_or_default<N>(&mut self, name: N) -> &mut GenericBounds<'a, C>
+    fn insert_or_default<N>(&mut self, name: N) -> &mut GenericBounds<'a>
     where
         N: Into<GenericName<'a>>,
-        C: Default,
     {
         let name = name.into();
         let index;
@@ -289,7 +268,7 @@ impl<'a, C> GenericsMap<'a, C> {
         &mut self.entries.get_mut(index).unwrap().1
     }
 
-    pub fn get_mut<N>(&mut self, name: N) -> Option<(GenericName<'a>, &mut GenericBounds<'a, C>)>
+    pub fn get_mut<N>(&mut self, name: N) -> Option<(GenericName<'a>, &mut GenericBounds<'a>)>
     where
         N: Into<GenericName<'a>>,
     {

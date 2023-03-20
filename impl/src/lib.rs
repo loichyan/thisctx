@@ -1,4 +1,7 @@
 //! Macro implementation of the [thisctx](https://crates.io/crates/thisctx) crate.
+
+#![allow(clippy::type_complexity)]
+
 extern crate proc_macro;
 
 mod ast;

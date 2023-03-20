@@ -1,7 +1,7 @@
 use crate::{
     ast::{Enum, Field, Input, Struct, Variant},
     attr::{Attrs, FlagOrIdent},
-    generics::{GenericName, TypeParamBound},
+    generics::{GenericName, GenericsAnalyzer, TypeParamBound},
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
@@ -33,8 +33,6 @@ new_type_quote!(
     T_INTO       (::core::convert::Into);
     T_INTO_ERROR (::thisctx::IntoError);
 );
-
-type GenericsAnalyzer<'a> = crate::generics::GenericsAnalyzer<'a, GenericBoundsContext>;
 
 const DEFAULT_SUFFIX: &str = "Context";
 
@@ -161,11 +159,6 @@ struct ContextOptions<'a> {
     visibility: Option<&'a Visibility>,
 }
 
-#[derive(Default)]
-struct GenericBoundsContext {
-    selected: bool,
-}
-
 impl<'a> ContextOptions<'a> {
     fn inherited_from(attrs_chain: &[&'a Attrs<'a>]) -> Self {
         let mut new = ContextOptions::default();
@@ -252,7 +245,7 @@ impl<'a> Context<'a> {
                 // Check if type of the field intersects with input generics.
                 generics_analyzer.intersects(original_ty, |_, bounds| {
                     generated = false;
-                    bounds.context.selected = true;
+                    bounds.selected = true;
                 });
                 generated = generated
                     && field.attrs.thisctx.generic.or(self.options.generic) != Some(false);
@@ -542,7 +535,7 @@ fn quote_analyzed_generics(
     emit_selected_only: bool,
 ) -> TokenStream {
     let generics = analyzer.bounds.iter().flat_map(|(name, bounds)| {
-        if emit_selected_only && !bounds.context.selected {
+        if emit_selected_only && !bounds.selected {
             return None;
         }
         if emit_definition {
