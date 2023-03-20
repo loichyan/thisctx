@@ -401,10 +401,6 @@ pub use thisctx_impl::WithContext;
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub struct NoneSource;
 
-pub trait IntoSource<T>: Sized {
-    fn into_source(self) -> T;
-}
-
 pub trait IntoError<E>: Sized {
     type Source;
 

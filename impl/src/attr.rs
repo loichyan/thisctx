@@ -102,6 +102,19 @@ fn require_empty_attribute(attr: &Attribute) -> Result<()> {
     Ok(())
 }
 
+fn parse_error_attribute(attr: &Attribute) -> Result<AttrError> {
+    attr.parse_args_with(|input: ParseStream| {
+        let mut error = AttrError::default();
+        if input.peek(kw::transparent) {
+            input.parse::<kw::transparent>()?;
+            error.transparent = Some(attr);
+        } else {
+            input.parse::<TokenStream>()?;
+        }
+        Ok(error)
+    })
+}
+
 fn parse_thisctx_attribute(options: &mut AttrThisctx, original: &Attribute) -> Result<()> {
     original.parse_args_with(|input: ParseStream| {
         macro_rules! check_dup {
@@ -131,15 +144,12 @@ fn parse_thisctx_attribute(options: &mut AttrThisctx, original: &Attribute) -> R
                     return Err(lookhead.error());
                 };
                 ($opt:ident = $kw:ident, $($rest:tt)*) => {
-                    parse_opts!($opt = $kw(ParseThisctxOpt::parse(input)?), $($rest)*);
-                };
-                ($opt:ident = $kw:ident as $ty:ty, $($rest:tt)*) => {
-                    parse_opts!($opt = $kw(<$ty as ParseThisctxOpt>::parse(input)?.into()), $($rest)*);
+                    parse_opts!($opt @= $kw(ParseThisctxOpt::parse(input)?), $($rest)*);
                 };
                 ($opt:ident ~= $kw:ident, $($rest:tt)*) => {
-                    parse_opts!($opt = $kw((!<bool as ParseThisctxOpt>::parse(input)?).into()), $($rest)*);
+                    parse_opts!($opt @= $kw((!<bool as ParseThisctxOpt>::parse(input)?).into()), $($rest)*);
                 };
-                ($opt:ident = $kw:ident($val:expr), $($rest:tt)*) => {
+                ($opt:ident @= $kw:ident($val:expr), $($rest:tt)*) => {
                     syn::custom_keyword!($kw);
                     if lookhead.peek($kw) {
                         check_dup!($opt as $kw);
@@ -226,26 +236,6 @@ impl ParseThisctxOpt for bool {
     }
 }
 
-impl ParseThisctxOpt for RevBool {
-    fn parse(input: ParseStream) -> Result<Self> {
-        <bool as ParseThisctxOpt>::parse(input).map(|b| Self(!b))
-    }
-}
-
-struct RevBool(bool);
-
-impl From<RevBool> for bool {
-    fn from(value: RevBool) -> Self {
-        value.0
-    }
-}
-
-impl From<RevBool> for FlagOrIdent {
-    fn from(value: RevBool) -> Self {
-        value.0.into()
-    }
-}
-
 fn parse_thisctx_opt<T: Parse>(input: ParseStream, required: bool) -> Result<Option<T>> {
     if input.peek(Token![=]) {
         input.parse::<Token![=]>()?;
@@ -258,17 +248,4 @@ fn parse_thisctx_opt<T: Parse>(input: ParseStream, required: bool) -> Result<Opt
         parenthesized!(content in input);
         content.parse().map(Some)
     }
-}
-
-fn parse_error_attribute(attr: &Attribute) -> Result<AttrError> {
-    attr.parse_args_with(|input: ParseStream| {
-        let mut error = AttrError::default();
-        if input.peek(kw::transparent) {
-            input.parse::<kw::transparent>()?;
-            error.transparent = Some(attr);
-        } else {
-            input.parse::<TokenStream>()?;
-        }
-        Ok(error)
-    })
 }
