@@ -50,7 +50,7 @@ pub fn impl_struct(input: Struct) -> Option<TokenStream> {
     if input.attrs.skip() == Some(true) {
         return None;
     }
-    let mut options = ContextOptions::from_attrs([&input.attrs].iter().map(<_>::clone));
+    let mut options = ContextOptions::inherited_from(&[&input.attrs]);
     if options.suffix.is_none() {
         options.suffix = Some(&FlagOrIdent::Flag(true));
     }
@@ -91,9 +91,7 @@ impl<'a> Enum<'a> {
                 input: self.original,
                 variant: Some(&variant.original.ident),
                 surround: Surround::from_fields(&variant.original.fields),
-                options: ContextOptions::from_attrs(
-                    [&self.attrs, &variant.attrs].iter().map(<_>::clone),
-                ),
+                options: ContextOptions::inherited_from(&[&self.attrs, &variant.attrs]),
                 ident: &variant.original.ident,
                 fields: &variant.fields,
                 transparent: variant.attrs.is_transparent(),
@@ -169,41 +167,36 @@ struct GenericBoundsContext {
 }
 
 impl<'a> ContextOptions<'a> {
-    fn from_attrs(attrs_iter: impl DoubleEndedIterator<Item = &'a Attrs<'a>> + Clone) -> Self {
+    fn inherited_from(attrs_chain: &[&'a Attrs<'a>]) -> Self {
         let mut new = ContextOptions::default();
 
-        macro_rules! update_options {
-            ($attrs:expr=> ) => {};
-            ($attrs:expr=> $attr:ident, $($rest:tt)*) => {
-                if let Some(attr) = $attrs.thisctx.$attr {
-                    new.$attr = Some(attr);
-                }
-                update_options!($attrs=> $($rest)*);
-            };
-            ($attrs:expr=> &$attr:ident, $($rest:tt)*) => {
-                if let Some(attr) = $attrs.thisctx.$attr.as_ref() {
-                    new.$attr = Some(attr);
-                }
-                update_options!($attrs=> $($rest)*);
-            };
-            ($attrs:expr=> +$attr:ident, $($rest:tt)*) => {
-                new.$attr.extend($attrs.thisctx.$attr.iter());
-                update_options!($attrs=> $($rest)*);
-            };
-        }
+        for attrs in attrs_chain.iter().rev() {
+            let options = &attrs.thisctx;
 
-        for attrs in attrs_iter.clone().rev() {
-            let attrs = &attrs.thisctx.attr;
-            quote!(#(#[#attrs])*).to_tokens(&mut new.attr);
-        }
-        for attrs in attrs_iter {
-            update_options!(attrs=>
-                generic,
-                unit,
-                &suffix,
-                &visibility,
-                +into,
-            );
+            macro_rules! update_option {
+                (=$opt:ident) => {
+                    if new.$opt.is_none() {
+                        new.$opt = options.$opt;
+                    }
+                };
+                (&$opt:ident) => {
+                    if new.$opt.is_none() {
+                        new.$opt = options.$opt.as_ref();
+                    }
+                };
+                (+$opt:ident) => {
+                    new.$opt.extend(options.$opt.iter());
+                };
+            }
+
+            let attr = &options.attr;
+            new.attr.extend(quote!(#(#[#attr])*));
+
+            update_option!(=generic);
+            update_option!(=unit);
+            update_option!(&suffix);
+            update_option!(&visibility);
+            update_option!(+into);
         }
 
         new

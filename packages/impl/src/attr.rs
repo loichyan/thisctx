@@ -117,7 +117,7 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
                 if attrs.$attr.is_some() {
                     return Err(Error::new_spanned(
                         kw,
-                        concat!("duplicate #[thisctx(", stringify!($attr), ")] attribute"),
+                        concat!("duplicate #[thisctx(", stringify!($attr), ")] option"),
                     ));
                 }
                 kw
