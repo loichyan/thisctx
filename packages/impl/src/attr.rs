@@ -106,33 +106,22 @@ fn require_empty_attribute(attr: &Attribute) -> Result<()> {
     Ok(())
 }
 
-fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Result<()> {
+fn parse_thisctx_attribute(options: &mut AttrThisctx, original: &Attribute) -> Result<()> {
     original.parse_args_with(|input: ParseStream| {
         macro_rules! check_dup {
-            ($attr:ident) => {
-                check_dup!($attr, kw::$attr)
+            ($opt:ident) => {
+                check_dup!($opt as kw::$opt)
             };
-            ($attr:ident, $kw:ty) => {{
+            ($opt:ident as $kw:ty) => {{
                 let kw = input.parse::<$kw>()?;
-                if attrs.$attr.is_some() {
+                if options.$opt.is_some() {
                     return Err(Error::new_spanned(
                         kw,
-                        concat!("duplicate #[thisctx(", stringify!($attr), ")] option"),
+                        concat!("duplicate #[thisctx(", stringify!($opt), ")] option"),
                     ));
                 }
                 kw
             }};
-        }
-
-        macro_rules! parse_bool {
-            ($attr:ident) => {
-                check_dup!($attr);
-                attrs.$attr = Some(parse_bool(input)?.into());
-            };
-            ($attr:ident, $no_attr:ident) => {
-                check_dup!($attr, kw::$no_attr);
-                attrs.$attr = Some((!parse_bool(input)?).into());
-            };
         }
 
         loop {
@@ -140,42 +129,68 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
                 break;
             }
             let lookhead = input.lookahead1();
-            if lookhead.peek(kw::attr) {
-                input.parse::<kw::attr>()?;
-                attrs.attr.push(parse_thisctx_arg(input, true)?.unwrap());
-            } else if lookhead.peek(kw::generic) {
-                parse_bool!(generic);
-            } else if lookhead.peek(kw::no_generic) {
-                parse_bool!(generic, no_generic);
-            } else if lookhead.peek(kw::into) {
-                input.parse::<kw::into>()?;
-                attrs.into.push(parse_thisctx_arg(input, true)?.unwrap());
-            } else if lookhead.peek(kw::module) {
-                check_dup!(module);
-                attrs.module = Some(parse_flag_or_ident(input)?);
-            } else if lookhead.peek(kw::no_module) {
-                parse_bool!(module, no_module);
-            } else if lookhead.peek(kw::skip) {
-                parse_bool!(skip);
-            } else if lookhead.peek(kw::no_skip) {
-                parse_bool!(skip, no_skip);
-            } else if lookhead.peek(kw::suffix) {
-                check_dup!(suffix);
-                attrs.suffix = Some(parse_flag_or_ident(input)?);
-            } else if lookhead.peek(kw::no_suffix) {
-                parse_bool!(suffix, no_suffix);
-            } else if lookhead.peek(kw::unit) {
-                parse_bool!(unit);
-            } else if lookhead.peek(kw::no_unit) {
-                parse_bool!(unit, no_unit);
-            } else if lookhead.peek(kw::visibility) {
-                check_dup!(visibility);
-                attrs.visibility = parse_thisctx_arg(input, true)?;
-            } else if lookhead.peek(Token![pub]) {
-                attrs.visibility = Some(check_dup!(visibility, Visibility));
-            } else {
-                return Err(lookhead.error());
+
+            macro_rules! parse_opts {
+                () => {
+                    return Err(lookhead.error());
+                };
+                ($opt:ident = !$kw:ident, $($rest:tt)*) => {
+                    parse_opts!($opt = $kw as RevBool, $($rest)*);
+                };
+                ($opt:ident = $kw:ident, $($rest:tt)*) => {
+                    parse_opts!(@inner
+                        $opt,
+                        $kw,
+                        options.$opt = Some(ParseThisctxOpt::parse(input)?),
+                        $($rest)*
+                    );
+                };
+                ($opt:ident = $kw:ident as $ty:ty, $($rest:tt)*) => {
+                    parse_opts!(@inner
+                        $opt,
+                        $kw,
+                        options.$opt = Some(<$ty as ParseThisctxOpt>::parse(input)?.into()),
+                        $($rest)*
+                    );
+                };
+                ($opt:ident += $kw:ident, $($rest:tt)*) => {
+                    parse_opts!(@inner
+                        $opt,
+                        $kw,
+                        options.$opt.push(parse_thisctx_opt(input, true)?.unwrap()),
+                        $($rest)*
+                    );
+                };
+                (@inner $opt:ident, $kw:ident, $update:expr, $($rest:tt)*) => {
+                    if lookhead.peek(kw::$kw) {
+                        input.parse::<kw::$kw>()?;
+                        $update;
+                    } else {
+                        parse_opts!($($rest)*);
+                    }
+                };
             }
+
+            if lookhead.peek(Token![pub]) {
+                options.visibility = Some(check_dup!(visibility as Visibility));
+            } else {
+                parse_opts! {
+                    attr       += attr,
+                    generic     = !no_generic,
+                    generic     = generic,
+                    into       += into,
+                    module      = !no_module,
+                    module      = module,
+                    skip        = !no_skip,
+                    skip        = skip,
+                    suffix      = !no_suffix,
+                    suffix      = suffix,
+                    unit        = !no_unit,
+                    unit        = unit,
+                    visibility  = visibility,
+                }
+            }
+
             if input.is_empty() {
                 break;
             }
@@ -185,17 +200,51 @@ fn parse_thisctx_attribute(attrs: &mut AttrThisctx, original: &Attribute) -> Res
     })
 }
 
-fn parse_flag_or_ident(input: ParseStream) -> Result<FlagOrIdent> {
-    Ok(parse_thisctx_arg(input, false)?.unwrap_or(true.into()))
+trait ParseThisctxOpt: Sized {
+    fn parse(input: ParseStream) -> Result<Self>;
 }
 
-fn parse_bool(input: ParseStream) -> Result<bool> {
-    Ok(parse_thisctx_arg::<LitBool>(input, false)?
-        .map(|flag| flag.value)
-        .unwrap_or(true))
+impl ParseThisctxOpt for Visibility {
+    fn parse(input: ParseStream) -> Result<Self> {
+        parse_thisctx_opt(input, true).map(Option::unwrap)
+    }
 }
 
-fn parse_thisctx_arg<T: Parse>(input: ParseStream, required: bool) -> Result<Option<T>> {
+impl ParseThisctxOpt for FlagOrIdent {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(parse_thisctx_opt(input, false)?.unwrap_or(true.into()))
+    }
+}
+
+impl ParseThisctxOpt for bool {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(parse_thisctx_opt::<LitBool>(input, false)?
+            .map(|flag| flag.value)
+            .unwrap_or(true))
+    }
+}
+
+impl ParseThisctxOpt for RevBool {
+    fn parse(input: ParseStream) -> Result<Self> {
+        <bool as ParseThisctxOpt>::parse(input).map(|b| Self(!b))
+    }
+}
+
+struct RevBool(bool);
+
+impl From<RevBool> for bool {
+    fn from(value: RevBool) -> Self {
+        value.0
+    }
+}
+
+impl From<RevBool> for FlagOrIdent {
+    fn from(value: RevBool) -> Self {
+        value.0.into()
+    }
+}
+
+fn parse_thisctx_opt<T: Parse>(input: ParseStream, required: bool) -> Result<Option<T>> {
     if input.peek(Token![=]) {
         input.parse::<Token![=]>()?;
         let s = input.parse::<LitStr>()?;
