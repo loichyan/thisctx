@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.4.0 (2023-03-20)
+
+### BREAKING CHANGE
+
+- The macro will generate types for transparent variants/structs and this can be disabled by `#[thisctx(skip)]` attribute.
+- The `Context` suffix will not be appended to types generated from an enum by default. This can be enabled by add `#[thisctx(suffix)]` to the enum.
+- Use the attribute `#[thisctx(skip)]` instead of `#[thisctx(context(false))]` to skip a varaint.
+
+### Feat
+
+- **derive**: add shortcuts for common attributes
+- **derive**: use snake case of input as module name by default
+- **derive**: add attribute `no_suffix` as a shortcut to `suffix(false)`
+- **derive**: add `no_unit`, `no_generic` and `no_skip` attributes
+
+### Fix
+
+- **derive**: check duplicated options
+- **derive**: ensure the order when inheriting options
+
+### Refactor
+
+- **derive**: remove unused code
+- **packages**: move `packages/*` to project root
+- **derive**: use a generic way to parse options
+- **derive**: dont skip transparent variants by default
+- **derive**: disable `#[thisctx(suffix)]` on an enum
+- **derive**: rename `#[thisctx(context)]` to `#[thisctx(skip)]`
+
 ## v0.3.0 (2023-03-11)
 
 ### Feat

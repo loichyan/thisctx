@@ -4,7 +4,7 @@ exclude = ["compile_tests"]
 
 [package]
 name = "thisctx"
-version = "0.3.0"
+version = "0.4.0"
 license = "MIT OR Apache-2.0"
 authors = ["loichyan <loichyan@foxmail.com>"]
 edition = "2018"
@@ -19,7 +19,7 @@ keywords = ["error", "derive"]
 categories = ["rust-patterns"]
 
 [dependencies.thisctx_impl]
-version = "=0.3.0"
+version = "=0.4.0"
 path = "impl"
 
 [dev-dependencies]
