@@ -1,6 +1,6 @@
 [workspace]
-members = ["packages/*"]
-exclude = ["packages/compile_tests"]
+members = ["impl"]
+exclude = ["compile_tests"]
 
 [package]
 name = "thisctx"
@@ -20,7 +20,7 @@ categories = ["rust-patterns"]
 
 [dependencies.thisctx_impl]
 version = "=0.3.0"
-path = "packages/impl"
+path = "impl"
 
 [dev-dependencies]
 thiserror = "1.0"

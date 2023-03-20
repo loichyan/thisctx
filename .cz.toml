@@ -3,4 +3,4 @@ name = "cz_conventional_commits"
 version = "0.3.0"
 tag_format = "v$version"
 bump_message = "chore(release): v$new_version"
-version_files = ["Cargo.toml", "packages/impl/Cargo.toml"]
+version_files = ["Cargo.toml", "impl/Cargo.toml"]
