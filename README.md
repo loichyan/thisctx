@@ -107,8 +107,8 @@ struct ParseInt;
 ### `source`
 
 If a field has the `#[source]` attribute or is named `source`, the type of this
-field will be assigned to `IntoError::Source` and will not appear in the
-generated context types.
+field will be assigned to `IntoError::Source` and won't appear in the generated
+context types.
 
 ```rust
 #[derive(WithContext)]
@@ -155,6 +155,24 @@ Expanded example:
 #[derive(Debug)]
 struct ErrorContext<T1 = String> {
     reason: T1,
+}
+```
+
+`thisctx` allows you to add some common attributes without `attr(...)`,
+including:
+
+- `cfg`
+- `cfg_attr`
+- `derive`
+- `doc`
+
+This means the above example can also be written as:
+
+```rust
+#[derive(WithContext)]
+#[thisctx(derive(Debug))]
+struct Error {
+    reason: String,
 }
 ```
 

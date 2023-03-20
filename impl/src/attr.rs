@@ -1,4 +1,5 @@
 use proc_macro2::TokenStream;
+use quote::ToTokens;
 use syn::{
     parenthesized,
     parse::{Nothing, Parse, ParseStream},
@@ -10,17 +11,12 @@ mod kw {
 
     custom_keyword!(attr);
     custom_keyword!(generic);
-    custom_keyword!(no_generic);
     custom_keyword!(into);
     custom_keyword!(module);
-    custom_keyword!(no_module);
     custom_keyword!(skip);
-    custom_keyword!(no_skip);
     custom_keyword!(suffix);
-    custom_keyword!(no_suffix);
     custom_keyword!(transparent);
     custom_keyword!(unit);
-    custom_keyword!(no_unit);
     custom_keyword!(visibility);
 }
 
@@ -134,27 +130,37 @@ fn parse_thisctx_attribute(options: &mut AttrThisctx, original: &Attribute) -> R
                 () => {
                     return Err(lookhead.error());
                 };
-                ($opt:ident = !$kw:ident, $($rest:tt)*) => {
-                    parse_opts!($opt = $kw as RevBool, $($rest)*);
-                };
                 ($opt:ident = $kw:ident, $($rest:tt)*) => {
                     parse_opts!($opt = $kw(ParseThisctxOpt::parse(input)?), $($rest)*);
                 };
                 ($opt:ident = $kw:ident as $ty:ty, $($rest:tt)*) => {
                     parse_opts!($opt = $kw(<$ty as ParseThisctxOpt>::parse(input)?.into()), $($rest)*);
                 };
+                ($opt:ident ~= $kw:ident, $($rest:tt)*) => {
+                    parse_opts!($opt = $kw((!<bool as ParseThisctxOpt>::parse(input)?).into()), $($rest)*);
+                };
                 ($opt:ident = $kw:ident($val:expr), $($rest:tt)*) => {
-                    if lookhead.peek(kw::$kw) {
-                        check_dup!($opt as kw::$kw);
+                    syn::custom_keyword!($kw);
+                    if lookhead.peek($kw) {
+                        check_dup!($opt as $kw);
                         options.$opt = Some($val);
                     } else {
                         parse_opts!($($rest)*);
                     }
                 };
                 ($opt:ident += $kw:ident, $($rest:tt)*) => {
-                    if lookhead.peek(kw::$kw) {
-                        input.parse::<kw::$kw>()?;
+                    syn::custom_keyword!($kw);
+                    if lookhead.peek($kw) {
+                        input.parse::<$kw>()?;
                         options.$opt.push(parse_thisctx_opt(input, true)?.unwrap());
+                    } else {
+                        parse_opts!($($rest)*);
+                    }
+                };
+                ($opt:ident #= $kw:ident, $($rest:tt)*) => {
+                    syn::custom_keyword!($kw);
+                    if lookhead.peek($kw) {
+                        options.$opt.push(input.parse::<syn::Meta>()?.into_token_stream());
                     } else {
                         parse_opts!($($rest)*);
                     }
@@ -166,18 +172,24 @@ fn parse_thisctx_attribute(options: &mut AttrThisctx, original: &Attribute) -> R
             } else {
                 parse_opts! {
                     attr       += attr,
-                    generic     = !no_generic,
                     generic     = generic,
                     into       += into,
-                    module      = !no_module,
                     module      = module,
-                    skip        = !no_skip,
                     skip        = skip,
-                    suffix      = !no_suffix,
                     suffix      = suffix,
-                    unit        = !no_unit,
                     unit        = unit,
                     visibility  = visibility,
+                    // Reversed options
+                    generic    ~= no_generic,
+                    module     ~= no_module,
+                    skip       ~= no_skip,
+                    suffix     ~= no_suffix,
+                    unit       ~= no_unit,
+                    // Attribute shortcut
+                    attr       #= cfg,
+                    attr       #= cfg_attr,
+                    attr       #= derive,
+                    attr       #= doc,
                 }
             }
 
