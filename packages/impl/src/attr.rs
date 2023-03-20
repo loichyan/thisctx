@@ -138,33 +138,23 @@ fn parse_thisctx_attribute(options: &mut AttrThisctx, original: &Attribute) -> R
                     parse_opts!($opt = $kw as RevBool, $($rest)*);
                 };
                 ($opt:ident = $kw:ident, $($rest:tt)*) => {
-                    parse_opts!(@inner
-                        $opt,
-                        $kw,
-                        options.$opt = Some(ParseThisctxOpt::parse(input)?),
-                        $($rest)*
-                    );
+                    parse_opts!($opt = $kw(ParseThisctxOpt::parse(input)?), $($rest)*);
                 };
                 ($opt:ident = $kw:ident as $ty:ty, $($rest:tt)*) => {
-                    parse_opts!(@inner
-                        $opt,
-                        $kw,
-                        options.$opt = Some(<$ty as ParseThisctxOpt>::parse(input)?.into()),
-                        $($rest)*
-                    );
+                    parse_opts!($opt = $kw(<$ty as ParseThisctxOpt>::parse(input)?.into()), $($rest)*);
+                };
+                ($opt:ident = $kw:ident($val:expr), $($rest:tt)*) => {
+                    if lookhead.peek(kw::$kw) {
+                        check_dup!($opt as kw::$kw);
+                        options.$opt = Some($val);
+                    } else {
+                        parse_opts!($($rest)*);
+                    }
                 };
                 ($opt:ident += $kw:ident, $($rest:tt)*) => {
-                    parse_opts!(@inner
-                        $opt,
-                        $kw,
-                        options.$opt.push(parse_thisctx_opt(input, true)?.unwrap()),
-                        $($rest)*
-                    );
-                };
-                (@inner $opt:ident, $kw:ident, $update:expr, $($rest:tt)*) => {
                     if lookhead.peek(kw::$kw) {
                         input.parse::<kw::$kw>()?;
-                        $update;
+                        options.$opt.push(parse_thisctx_opt(input, true)?.unwrap());
                     } else {
                         parse_opts!($($rest)*);
                     }
