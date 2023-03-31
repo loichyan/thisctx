@@ -1,5 +1,5 @@
-//! A small crate works with [thiserror](https://crates.io/crates/thiserror) to
-//! create errors with contexts, heavily inspired by
+//! A little crate that works with [thiserror](https://crates.io/crates/thiserror)
+//! to create errors with context, heavily inspired by
 //! [snafu](https://crates.io/crates/snafu).
 //!
 //! # ✍️ Examples
@@ -37,32 +37,32 @@
 //! | `unit`       | `bool`          | ✔         | ✔         | ✔       |       |
 //! | `visibility` | `Visibility`    | ✔         | ✔         | ✔       | ✔     |
 //!
-//! The `#[source]` and `#[error]` attributes defined in `thiserror` will also be
+//! The `#[source]` and `#[error]` attributes defined in `thiserror` are also
 //! checked to determine the source error type.
 //!
 //! ## Option arguments
 //!
 //! `#[thisctx]` supports two syntaxes for passing arguments to an option:
 //!
-//! - Put tokens directly in the parentheses, e.g. `#[thisctx(visibility(pub))]`
-//! - Use a string literal, e.g. `#[thisctx(visibility = "pub")]`, this is useful in
-//!   older versions of `rustc` that don't support arbitrary tokens in non-macro
+//! - Put tokens directly in parentheses, e.g. `#[thisctx(visibility(pub))]`
+//! - Use a string literal, e.g. `#[thisctx(visibility = "pub")]`, which is useful
+//!   in older versions of `rustc` that don't support arbitrary tokens in non-macro
 //!   attributes.
 //!
 //! An option of type `T[]` can occur multiple times in the same node, while other
-//! types will lead an error.
+//! types result in an error.
 //!
 //! ## Boolean options
 //!
 //! You can omit the `true` value in boolean options, e.g. `#[thisctx(skip)]` is
 //! equal to `#[thisctx(skip(true))]`.
 //!
-//! Reversed boolean options starts with `no_` can also be used as a shortcut to
+//! Negative boolean options starting with `no_` can also be used as a shortcut to
 //! pass `false`, e.g. `#[thisctx(no_skip)]` is equal to `#[thisctx(skip(false))]`.
 //!
 //! ## Inherited options
 //!
-//! An inherited option uses the value of its parent node if no value is provided,
+//! An inherited option uses the value of its parent node if no value is specified,
 //! for example:
 //!
 //! ```
@@ -70,16 +70,16 @@
 //! #[derive(WithContext)]
 //! #[thisctx(skip)]
 //! enum Error {
-//!     // This variant will be ignored since `skip=true` is inherited.
+//!     // This variant is ignored since `skip=true` is inherited.
 //!     Io(#[source] std::io::Error),
-//!     // This variant will be processed.
+//!     // This variant is processed.
 //!     #[thisctx(no_skip)]
 //!     ParseInt(#[source] std::num::ParseIntError),
 //! }
 //! ```
 //!
-//! An option of type `T[]` will concatenate arguments from its ancestors instead of
-//! overriding them.
+//! An option of type `T[]` concatenates arguments from its ancestors instead of
+//! overriding them:
 //!
 //! ```
 //! # use thisctx::WithContext;
@@ -95,8 +95,7 @@
 //! Expanded example:
 //!
 //! ```
-//! // The order of attributes (and other options) is guaranteed by the order of
-//! // inheritance.
+//! // The order of attributes (and other options) is determined by the order of inheritance.
 //! // Attributes from the child node.
 //! #[derive(Clone, Copy)]
 //! // Attributes from the parent node.
@@ -110,7 +109,7 @@
 //! ## `source`
 //!
 //! If a field has the `#[source]` attribute or is named `source`, the type of this
-//! field will be assigned to `IntoError::Source` and won't appear in the generated
+//! field is assigned to `IntoError::Source` and doesn't appear in the generated
 //! context types.
 //!
 //! ```
@@ -143,11 +142,11 @@
 //! ## `error`
 //!
 //! If a variant is transparent (which has `#[error(transparent)]`), the first field
-//! (which should also be the only field) will be considered as the source field.
+//! (which should also be the only field) is considered as the source field.
 //!
 //! ## `thisctx.attr`
 //!
-//! An option used to add extra attributes to a generated node.
+//! An option used to append addition attributes to a generated node.
 //!
 //! ```
 //! # use thisctx::WithContext;
@@ -175,7 +174,7 @@
 //! - `derive`
 //! - `doc`
 //!
-//! This means the above example can also be written as:
+//! This means that the preceding example can also be written as:
 //!
 //! ```
 //! # use thisctx::WithContext;
@@ -188,7 +187,7 @@
 //!
 //! ## `thisctx.generic`
 //!
-//! An option to disable generics of a generated node.
+//! An option to remove generics from generated code.
 //!
 //! ```
 //! # use std::path::PathBuf;
@@ -259,7 +258,7 @@
 //!
 //! ## `thisctx.module`
 //!
-//! This option allows you put all generated context types into a single module.
+//! This option allows you to put all generated context types into a single module.
 //!
 //! ```
 //! # use thisctx::WithContext;
@@ -309,8 +308,8 @@
 //!
 //! An option to add a suffix to the names of the generated context types.
 //!
-//! By default, only `struct`s will be added the builtin suffix `Context` since the
-//! generated type without a suffix will confict with the error type.
+//! By default, only `struct`s get the builtin suffix `Context` since the generated
+//! types without suffix conflict with the error type.
 //!
 //! ```
 //! # use thisctx::WithContext;
@@ -330,14 +329,14 @@
 //! ```
 //!
 //! > The value `true` means to use the default suffix `Context` and the value
-//! > `false` will remove the suffix from the generated type.
+//! > `false` removes the suffix from the generated type.
 //!
 //! ## `thisctx.unit`
 //!
-//! In Rust, the parentheses are required to construct a tuple struct even if it's
-//! empty. `thisctx` will convert an empty struct to a unit struct by default. This
+//! In Rust, parentheses are required to construct a tuple struct even if it's
+//! empty. `thisctx` converts an empty struct to a unit struct by default. This
 //! allows you use the struct name to create a new context without having to add
-//! parentheses each time and can be disabled by passing `#[thisctx(no_unit)]`.
+//! parentheses each time and can be turned off by passing `#[thisctx(no_unit)]`.
 //!
 //! ```rust
 //! # use thisctx::WithContext;
@@ -384,15 +383,15 @@
 //! - [x] MSRV v1.33
 //! - [x] Use derive macro instead.
 //! - [x] Add attributes to context types.
-//! - [x] Support transparent error.
+//! - [x] Support transparent errors.
 //! - [x] Support generics.
 //! - [x] Simplify the derive implementation.
 //! - [x] More documentation.
 //! - [ ] More tests.
 //!
-//! # 🚩 Minimal suppoted Rust version
+//! # 🚩 Minimal supported Rust version
 //!
-//! All tests under `tests/*` passed with `rustc v1.33`, previous versions may not
+//! All tests under `tests/*` passed with `rustc v1.33`, earlier versions may not
 //! compile.
 #![no_std]
 
