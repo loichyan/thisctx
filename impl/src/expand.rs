@@ -1,11 +1,11 @@
 use crate::{
     ast::{Enum, Field, Input, Struct, Variant},
-    attr::{Attrs, FlagOrIdent},
+    attr::{AttrError, Attrs, FlagOrIdent},
     generics::{GenericName, GenericsAnalyzer, TypeParamBound},
 };
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
-use syn::{DeriveInput, Fields, Ident, Index, Result, Token, Type, Visibility};
+use syn::{DeriveInput, Fields, Ident, Index, Meta, Result, Token, Type, Visibility};
 
 macro_rules! new_type_quote {
     ($($name:ident($($tt:tt)*);)*) => {$(
@@ -45,7 +45,7 @@ pub fn derive(node: &DeriveInput) -> Result<TokenStream> {
 }
 
 pub fn impl_struct(input: Struct) -> Option<TokenStream> {
-    if input.attrs.skip() == Some(true) {
+    if input.attrs.skip == Some(true) {
         return None;
     }
     let mut options = ContextOptions::inherited_from(&[&input.attrs]);
@@ -81,7 +81,7 @@ pub fn impl_enum(input: Enum) -> TokenStream {
 
 impl<'a> Enum<'a> {
     fn impl_variant(&self, variant: &Variant) -> Option<TokenStream> {
-        if variant.attrs.skip().or_else(|| self.attrs.skip()) == Some(true) {
+        if variant.attrs.skip.or(self.attrs.skip) == Some(true) {
             return None;
         }
         Some(
@@ -99,35 +99,24 @@ impl<'a> Enum<'a> {
     }
 }
 
-impl<'a> Attrs<'a> {
+impl Attrs {
     fn is_transparent(&self) -> bool {
-        self.error
-            .as_ref()
-            .and_then(|e| e.transparent.as_ref())
-            .is_some()
-    }
-
-    fn skip(&self) -> Option<bool> {
-        self.thisctx.skip
+        matches!(self.error.as_ref(), Some(AttrError::Transparent))
     }
 
     fn with_module(&self, input: &DeriveInput, content: TokenStream) -> TokenStream {
         if content.is_empty() {
             return content;
         }
-        let vis = self.thisctx.visibility.as_ref().unwrap_or(&input.vis);
-        let module = self
-            .thisctx
-            .module
-            .as_ref()
-            .and_then(|module| match module {
-                FlagOrIdent::Flag(true) => Some(Ident::new(
-                    &camel_to_snake(&input.ident.to_string()),
-                    input.ident.span(),
-                )),
-                FlagOrIdent::Ident(ident) => Some(ident.clone()),
-                FlagOrIdent::Flag(false) => None,
-            });
+        let vis = self.visibility.as_ref().unwrap_or(&input.vis);
+        let module = self.module.as_ref().and_then(|module| match module {
+            FlagOrIdent::Flag(true) => Some(Ident::new(
+                &camel_to_snake(&input.ident.to_string()),
+                input.ident.span(),
+            )),
+            FlagOrIdent::Ident(ident) => Some(ident.clone()),
+            FlagOrIdent::Flag(false) => None,
+        });
         if let Some(module) = module {
             quote!(#vis mod #module {
                 use super::*;
@@ -151,7 +140,7 @@ struct Context<'a> {
 
 #[derive(Default)]
 struct ContextOptions<'a> {
-    attr: TokenStream,
+    attr: Vec<&'a Meta>,
     generic: Option<bool>,
     into: Vec<&'a Type>,
     suffix: Option<&'a FlagOrIdent>,
@@ -160,35 +149,34 @@ struct ContextOptions<'a> {
 }
 
 impl<'a> ContextOptions<'a> {
-    fn inherited_from(attrs_chain: &[&'a Attrs<'a>]) -> Self {
+    fn inherited_from(opts_chain: &[&'a Attrs]) -> Self {
         let mut new = ContextOptions::default();
+        let mut opts;
 
-        for attrs in attrs_chain.iter().rev() {
-            let options = &attrs.thisctx;
+        macro_rules! update_option {
+            (=$opt:ident) => {
+                if new.$opt.is_none() {
+                    new.$opt = opts.$opt;
+                }
+            };
+            (&$opt:ident) => {
+                if new.$opt.is_none() {
+                    new.$opt = opts.$opt.as_ref();
+                }
+            };
+            (+$opt:ident) => {
+                new.$opt.extend(opts.$opt.iter());
+            };
+        }
 
-            macro_rules! update_option {
-                (=$opt:ident) => {
-                    if new.$opt.is_none() {
-                        new.$opt = options.$opt;
-                    }
-                };
-                (&$opt:ident) => {
-                    if new.$opt.is_none() {
-                        new.$opt = options.$opt.as_ref();
-                    }
-                };
-                (+$opt:ident) => {
-                    new.$opt.extend(options.$opt.iter());
-                };
-            }
-
-            let attr = &options.attr;
-            new.attr.extend(quote!(#(#[#attr])*));
+        for t in opts_chain.iter().rev() {
+            opts = t;
 
             update_option!(=generic);
             update_option!(=unit);
             update_option!(&suffix);
             update_option!(&visibility);
+            update_option!(+attr);
             update_option!(+into);
         }
 
@@ -247,8 +235,8 @@ impl<'a> Context<'a> {
                     generated = false;
                     bounds.selected = true;
                 });
-                generated = generated
-                    && field.attrs.thisctx.generic.or(self.options.generic) != Some(false);
+                generated =
+                    generated && field.attrs.generic.or(self.options.generic) != Some(false);
                 field_ty = if generated {
                     // Generate a new type for conversion.
                     let generated = if let FieldName::Named(name) = field_name {
@@ -266,12 +254,7 @@ impl<'a> Context<'a> {
             fields_analyzer.push((
                 field_name,
                 FieldInfo {
-                    visibility: field
-                        .attrs
-                        .thisctx
-                        .visibility
-                        .as_ref()
-                        .unwrap_or(context_vis),
+                    visibility: field.attrs.visibility.as_ref().unwrap_or(context_vis),
                     attrs: &field.attrs,
                     ty: field_ty,
                 },
@@ -309,7 +292,7 @@ impl<'a> Context<'a> {
             .quote(fields, true);
             quote!(
                 #[allow(non_camel_case_types)]
-                #attr #context_vis
+                #(#[#attr])* #context_vis
                 struct #context_ident<#generics1 #generics2>
                 #body
             )
@@ -414,7 +397,7 @@ impl ToTokens for FieldName<'_> {
 
 struct FieldInfo<'a> {
     visibility: &'a Visibility,
-    attrs: &'a Attrs<'a>,
+    attrs: &'a Attrs,
     ty: FieldType<'a>,
 }
 
@@ -479,7 +462,7 @@ fn quote_context_fileds(analyzer: &FieldsAnalyzer) -> TokenStream {
         if let FieldType::Source = info.ty {
             return None;
         }
-        let attrs = &info.attrs.thisctx.attr;
+        let attrs = &info.attrs.attr;
         let vis = &info.visibility;
         let field = if let FieldName::Named(name) = name {
             Some(quote!(#name:))

@@ -1,35 +1,19 @@
 use proc_macro2::TokenStream;
-use quote::ToTokens;
 use syn::{
     parenthesized,
     parse::{Parse, ParseStream},
-    token, Attribute, Error, Ident, LitBool, LitStr, Result, Token, Type, Visibility,
+    token, Attribute, Error, Ident, LitBool, LitStr, Meta, Result, Token, Type, Visibility,
 };
 
-mod kw {
-    use syn::custom_keyword;
-
-    custom_keyword!(attr);
-    custom_keyword!(generic);
-    custom_keyword!(into);
-    custom_keyword!(module);
-    custom_keyword!(skip);
-    custom_keyword!(suffix);
-    custom_keyword!(transparent);
-    custom_keyword!(unit);
-    custom_keyword!(visibility);
-}
-
 #[derive(Default)]
-pub struct Attrs<'a> {
-    pub thisctx: AttrThisctx,
-    pub source: Option<&'a Attribute>,
-    pub error: Option<AttrError<'a>>,
-}
-
-#[derive(Default)]
-pub struct AttrThisctx {
-    pub attr: Vec<TokenStream>,
+pub struct Attrs {
+    // Attributes defined in thiserror
+    pub error: Option<AttrError>,
+    pub source: Option<AttrSource>,
+    // Where options go to
+    pub thisctx: Option<AttrThisctx>,
+    // Options list
+    pub attr: Vec<Meta>,
     pub generic: Option<bool>,
     pub into: Vec<Type>,
     pub module: Option<FlagOrIdent>,
@@ -39,209 +23,218 @@ pub struct AttrThisctx {
     pub visibility: Option<Visibility>,
 }
 
-#[derive(Default)]
-pub struct AttrError<'a> {
-    pub transparent: Option<&'a Attribute>,
+pub enum AttrError {
+    Transparent,
+    Others,
 }
+
+pub struct AttrSource;
+
+pub struct AttrThisctx;
 
 pub enum FlagOrIdent {
     Flag(bool),
     Ident(Ident),
 }
 
-impl From<bool> for FlagOrIdent {
-    fn from(value: bool) -> Self {
-        FlagOrIdent::Flag(value)
+/// Parses the value of an option or attribute.
+///
+/// Supports two syntaxes:
+///
+/// 1. Quoted literal: `= "..."`
+/// 2. Surrounded tokens: `(...)`
+fn parse_value<T>(
+    input: ParseStream,
+    parser: impl FnOnce(ParseStream) -> Result<T>,
+    fallback: impl FnOnce() -> Option<T>,
+) -> Result<T> {
+    let lookahead = input.lookahead1();
+    if lookahead.peek(Token![=]) {
+        input.parse::<Token![=]>()?;
+        input.parse::<LitStr>()?.parse_with(parser)
+    } else if lookahead.peek(token::Paren) {
+        let content;
+        parenthesized!(content in input);
+        parser(&content)
+    } else if let Some(t) = fallback() {
+        Ok(t)
+    } else {
+        Err(lookahead.error())
     }
 }
 
-impl Parse for FlagOrIdent {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let lookhead = input.lookahead1();
-        if lookhead.peek(LitBool) {
-            input.parse::<LitBool>().map(|flag| flag.value.into())
-        } else if lookhead.peek(Ident) {
-            input.parse().map(FlagOrIdent::Ident)
-        } else {
-            Err(lookhead.error())
+fn parse_any<T: Parse>(input: ParseStream) -> Result<T> {
+    parse_value(input, T::parse, || None)
+}
+
+/// Parses a boolean value and returns negative if specified.
+fn parse_bool(input: ParseStream, neg: bool) -> Result<bool> {
+    parse_value(
+        input,
+        |input| Ok(input.parse::<LitBool>()?.value() ^ neg),
+        || Some(true ^ neg),
+    )
+}
+
+/// Similar to [`parse_bool`] and also accepts an identifier as a value.
+fn parse_flag_or_ident(input: ParseStream, neg: bool) -> Result<FlagOrIdent> {
+    parse_value(
+        input,
+        |input| {
+            let lookahead = input.lookahead1();
+            if lookahead.peek(LitBool) {
+                Ok(FlagOrIdent::Flag(input.parse::<LitBool>()?.value ^ neg))
+            // Identifiers in a negative option are meaningless.
+            } else if !neg && lookahead.peek(Ident) {
+                input.parse().map(FlagOrIdent::Ident)
+            } else {
+                Err(lookahead.error())
+            }
+        },
+        || Some(FlagOrIdent::Flag(true ^ neg)),
+    )
+}
+
+fn parse_options(input: ParseStream, opts: &mut Attrs) -> Result<()> {
+    let mut lookahead;
+
+    macro_rules! ensure_once {
+        ($name:ident) => {
+            if opts.$name.is_some() {
+                return Err(Error::new(
+                    input.span(),
+                    format!("duplicate #[thisctx({})] option", stringify!($name)),
+                ));
+            }
+        };
+    }
+
+    macro_rules! parse_opts {
+        () => {
+            return Err(lookahead.error());
+        };
+        // Option appears at most once
+        ($opt:ident = $kw:ident use $parser:ident($($args:tt)*), $($rest:tt)*) => {
+            syn::custom_keyword!($kw);
+            if lookahead.peek($kw) {
+                ensure_once!($opt);
+                input.parse::<$kw>()?;
+                opts.$opt = Some($parser(input, $($args)*)?);
+            } else {
+                parse_opts!($($rest)*);
+            }
+        };
+        // Repeatable option
+        ($opt:ident += $kw:ident use $parser:ident($($args:tt)*), $($rest:tt)*) => {
+            syn::custom_keyword!($kw);
+            if lookahead.peek($kw) {
+                input.parse::<$kw>()?;
+                opts.$opt.push($parser(input, $($args)*)?);
+            } else {
+                parse_opts!($($rest)*);
+            }
+        };
+        // Attribute shortcut
+        ($opt:ident #= $kw:ident, $($rest:tt)*) => {
+            syn::custom_keyword!($kw);
+            if lookahead.peek($kw) {
+                opts.$opt.push(input.parse()?);
+            } else {
+                parse_opts!($($rest)*);
+            }
+        };
+    }
+
+    loop {
+        if input.is_empty() {
+            break;
         }
+        lookahead = input.lookahead1();
+
+        if lookahead.peek(Token![pub]) {
+            ensure_once!(visibility);
+            opts.visibility = Some(input.parse()?);
+        } else {
+            parse_opts! {
+                attr       += attr       use parse_any(),
+                attr       #= cfg,
+                attr       #= cfg_attr,
+                attr       #= derive,
+                attr       #= doc,
+
+                generic     = generic    use parse_bool(false),
+                generic     = no_generic use parse_bool(true),
+
+                into       += into       use parse_any(),
+
+                module      = module     use parse_flag_or_ident(false),
+                module      = no_module  use parse_flag_or_ident(true),
+
+                skip        = skip       use parse_bool(false),
+                skip        = no_skip    use parse_bool(true),
+
+                suffix      = suffix     use parse_flag_or_ident(false),
+                suffix      = no_suffix  use parse_flag_or_ident(true),
+
+                unit        = unit       use parse_bool(false),
+                unit        = no_unit    use parse_bool(true),
+
+                visibility  = visibility use parse_any(),
+            }
+        }
+
+        if input.is_empty() {
+            break;
+        }
+        input.parse::<Token![,]>()?;
+    }
+
+    Ok(())
+}
+
+fn parse_attr_error(input: ParseStream) -> Result<AttrError> {
+    syn::custom_keyword!(transparent);
+
+    if input.parse::<Option<transparent>>()?.is_some() {
+        Ok(AttrError::Transparent)
+    } else {
+        input.parse::<TokenStream>()?;
+        Ok(AttrError::Others)
     }
 }
 
 pub fn get(input: &[Attribute]) -> Result<Attrs> {
     let mut attrs = Attrs::default();
+    let mut attr;
+    let mut path;
 
-    for attr in input {
-        macro_rules! check_dup {
-            ($attr:ident) => {
-                if attrs.$attr.is_some() {
-                    return Err(Error::new_spanned(
-                        attr,
-                        concat!("duplicate #[", stringify!($attr), "] attribute"),
-                    ));
-                }
-            };
-        }
+    macro_rules! ensure_once {
+        ($name:ident) => {
+            if attrs.$name.is_some() {
+                return Err(Error::new(
+                    path.span(),
+                    format!("duplicate #[{}] attribute", stringify!($name)),
+                ));
+            }
+        };
+    }
 
-        let path = attr.path();
-        if path.is_ident("thisctx") {
-            parse_thisctx_attribute(&mut attrs.thisctx, attr)?;
-        } else if path.is_ident("source") {
-            attr.meta.require_path_only()?;
-            check_dup!(source);
-            attrs.source = Some(attr);
-        } else if path.is_ident("error") {
-            check_dup!(error);
-            attrs.error = Some(parse_error_attribute(attr)?);
+    for t in input {
+        attr = t;
+        if let Some(t) = attr.path().get_ident() {
+            path = t;
+            if path == "thisctx" {
+                attr.parse_args_with(|input: ParseStream| parse_options(input, &mut attrs))?;
+            } else if path == "source" {
+                ensure_once!(source);
+                attr.meta.require_path_only()?;
+                attrs.source = Some(AttrSource);
+            } else if path == "error" {
+                ensure_once!(error);
+                attrs.error = Some(attr.parse_args_with(parse_attr_error)?);
+            }
         }
     }
+
     Ok(attrs)
-}
-
-fn parse_error_attribute(attr: &Attribute) -> Result<AttrError> {
-    attr.parse_args_with(|input: ParseStream| {
-        let mut error = AttrError::default();
-        if input.peek(kw::transparent) {
-            input.parse::<kw::transparent>()?;
-            error.transparent = Some(attr);
-        } else {
-            input.parse::<TokenStream>()?;
-        }
-        Ok(error)
-    })
-}
-
-fn parse_thisctx_attribute(options: &mut AttrThisctx, original: &Attribute) -> Result<()> {
-    original.parse_args_with(|input: ParseStream| {
-        macro_rules! check_dup {
-            ($opt:ident) => {
-                check_dup!($opt as kw::$opt)
-            };
-            ($opt:ident as $kw:ty) => {{
-                let kw = input.parse::<$kw>()?;
-                if options.$opt.is_some() {
-                    return Err(Error::new_spanned(
-                        kw,
-                        concat!("duplicate #[thisctx(", stringify!($opt), ")] option"),
-                    ));
-                }
-                kw
-            }};
-        }
-
-        loop {
-            if input.is_empty() {
-                break;
-            }
-            let lookhead = input.lookahead1();
-
-            macro_rules! parse_opts {
-                () => {
-                    return Err(lookhead.error());
-                };
-                ($opt:ident = $kw:ident, $($rest:tt)*) => {
-                    parse_opts!($opt @= $kw(ParseThisctxOpt::parse(input)?), $($rest)*);
-                };
-                ($opt:ident ~= $kw:ident, $($rest:tt)*) => {
-                    parse_opts!($opt @= $kw((!<bool as ParseThisctxOpt>::parse(input)?).into()), $($rest)*);
-                };
-                ($opt:ident @= $kw:ident($val:expr), $($rest:tt)*) => {
-                    syn::custom_keyword!($kw);
-                    if lookhead.peek($kw) {
-                        check_dup!($opt as $kw);
-                        options.$opt = Some($val);
-                    } else {
-                        parse_opts!($($rest)*);
-                    }
-                };
-                ($opt:ident += $kw:ident, $($rest:tt)*) => {
-                    syn::custom_keyword!($kw);
-                    if lookhead.peek($kw) {
-                        input.parse::<$kw>()?;
-                        options.$opt.push(parse_thisctx_opt(input, true)?.unwrap());
-                    } else {
-                        parse_opts!($($rest)*);
-                    }
-                };
-                ($opt:ident #= $kw:ident, $($rest:tt)*) => {
-                    syn::custom_keyword!($kw);
-                    if lookhead.peek($kw) {
-                        options.$opt.push(input.parse::<syn::Meta>()?.into_token_stream());
-                    } else {
-                        parse_opts!($($rest)*);
-                    }
-                };
-            }
-
-            if lookhead.peek(Token![pub]) {
-                options.visibility = Some(check_dup!(visibility as Visibility));
-            } else {
-                parse_opts! {
-                    attr       += attr,
-                    generic     = generic,
-                    into       += into,
-                    module      = module,
-                    skip        = skip,
-                    suffix      = suffix,
-                    unit        = unit,
-                    visibility  = visibility,
-                    // Reversed options
-                    generic    ~= no_generic,
-                    module     ~= no_module,
-                    skip       ~= no_skip,
-                    suffix     ~= no_suffix,
-                    unit       ~= no_unit,
-                    // Attribute shortcut
-                    attr       #= cfg,
-                    attr       #= cfg_attr,
-                    attr       #= derive,
-                    attr       #= doc,
-                }
-            }
-
-            if input.is_empty() {
-                break;
-            }
-            input.parse::<Token![,]>()?;
-        }
-        Ok(())
-    })
-}
-
-trait ParseThisctxOpt: Sized {
-    fn parse(input: ParseStream) -> Result<Self>;
-}
-
-impl ParseThisctxOpt for Visibility {
-    fn parse(input: ParseStream) -> Result<Self> {
-        parse_thisctx_opt(input, true).map(Option::unwrap)
-    }
-}
-
-impl ParseThisctxOpt for FlagOrIdent {
-    fn parse(input: ParseStream) -> Result<Self> {
-        Ok(parse_thisctx_opt(input, false)?.unwrap_or_else(|| true.into()))
-    }
-}
-
-impl ParseThisctxOpt for bool {
-    fn parse(input: ParseStream) -> Result<Self> {
-        Ok(parse_thisctx_opt::<LitBool>(input, false)?
-            .map(|flag| flag.value)
-            .unwrap_or(true))
-    }
-}
-
-fn parse_thisctx_opt<T: Parse>(input: ParseStream, required: bool) -> Result<Option<T>> {
-    if input.peek(Token![=]) {
-        input.parse::<Token![=]>()?;
-        let s = input.parse::<LitStr>()?;
-        s.parse().map(Some)
-    } else if !required && !input.peek(token::Paren) {
-        Ok(None)
-    } else {
-        let content;
-        parenthesized!(content in input);
-        content.parse().map(Some)
-    }
 }

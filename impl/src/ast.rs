@@ -9,26 +9,26 @@ pub enum Input<'a> {
 pub struct Struct<'a> {
     pub original: &'a DeriveInput,
     pub data: &'a DataStruct,
-    pub attrs: Attrs<'a>,
+    pub attrs: Attrs,
     pub fields: Vec<Field<'a>>,
 }
 
 pub struct Enum<'a> {
     pub original: &'a DeriveInput,
     pub data: &'a DataEnum,
-    pub attrs: Attrs<'a>,
+    pub attrs: Attrs,
     pub variants: Vec<Variant<'a>>,
 }
 
 pub struct Variant<'a> {
     pub original: &'a syn::Variant,
-    pub attrs: Attrs<'a>,
+    pub attrs: Attrs,
     pub fields: Vec<Field<'a>>,
 }
 
 pub struct Field<'a> {
     pub original: &'a syn::Field,
-    pub attrs: Attrs<'a>,
+    pub attrs: Attrs,
 }
 
 impl<'a> Input<'a> {
