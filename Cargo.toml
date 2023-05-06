@@ -1,14 +1,13 @@
 [workspace]
 members = ["impl"]
-exclude = ["compile_tests"]
 
 [package]
 name = "thisctx"
 version = "0.4.0"
 license = "MIT OR Apache-2.0"
 authors = ["loichyan <loichyan@foxmail.com>"]
-edition = "2018"
-rust-version = "1.33"
+edition = "2021"
+rust-version = "1.56"
 
 description = "Easily create error with contexts"
 readme = "README.md"
@@ -18,9 +17,9 @@ documentation = "https://docs.rs/thisctx"
 keywords = ["error", "derive"]
 categories = ["rust-patterns"]
 
-[dependencies.thisctx_impl]
-version = "=0.4.0"
-path = "impl"
+[dependencies]
+thisctx_impl = { version = "=0.4.0", path = "impl" }
 
 [dev-dependencies]
 thiserror = "1.0"
+trybuild = "1.0"

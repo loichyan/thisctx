@@ -221,7 +221,7 @@ enum RemoteError {
 // From<T> is required by #[thisctx(into)]
 impl From<MyError> for RemoteError {
     fn from(e: MyError) -> Self {
-        Self::Custom(e.0)
+        RemoteError::Custom(e.0)
     }
 }
 
@@ -351,20 +351,12 @@ pub(crate) struct ParseIntError;
 
 ## 📝 Todo
 
-- [x] ~~Switch to Rust 2021.~~
-- [x] MSRV v1.33
-- [x] Use derive macro instead.
-- [x] Add attributes to context types.
-- [x] Support transparent errors.
-- [x] Support generics.
-- [x] Simplify the derive implementation.
-- [x] More documentation.
+- [ ] Simplify the derive implementation.
 - [ ] More tests.
 
 ## 🚩 Minimal supported Rust version
 
-All tests under `tests/*` passed with `rustc v1.33`, earlier versions may not
-compile.
+All tests passed with `rustc v1.56`, earlier versions may not compile.
 
 ## ⚖️ License
 

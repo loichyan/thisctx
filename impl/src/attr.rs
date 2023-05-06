@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::{
     parenthesized,
-    parse::{Nothing, Parse, ParseStream},
+    parse::{Parse, ParseStream},
     token, Attribute, Error, Ident, LitBool, LitStr, Result, Token, Type, Visibility,
 };
 
@@ -51,7 +51,7 @@ pub enum FlagOrIdent {
 
 impl From<bool> for FlagOrIdent {
     fn from(value: bool) -> Self {
-        Self::Flag(value)
+        FlagOrIdent::Flag(value)
     }
 }
 
@@ -83,23 +83,19 @@ pub fn get(input: &[Attribute]) -> Result<Attrs> {
             };
         }
 
-        if attr.path.is_ident("thisctx") {
+        let path = attr.path();
+        if path.is_ident("thisctx") {
             parse_thisctx_attribute(&mut attrs.thisctx, attr)?;
-        } else if attr.path.is_ident("source") {
-            require_empty_attribute(attr)?;
+        } else if path.is_ident("source") {
+            attr.meta.require_path_only()?;
             check_dup!(source);
             attrs.source = Some(attr);
-        } else if attr.path.is_ident("error") {
+        } else if path.is_ident("error") {
             check_dup!(error);
             attrs.error = Some(parse_error_attribute(attr)?);
         }
     }
     Ok(attrs)
-}
-
-fn require_empty_attribute(attr: &Attribute) -> Result<()> {
-    syn::parse2::<Nothing>(attr.tokens.clone())?;
-    Ok(())
 }
 
 fn parse_error_attribute(attr: &Attribute) -> Result<AttrError> {
@@ -224,7 +220,7 @@ impl ParseThisctxOpt for Visibility {
 
 impl ParseThisctxOpt for FlagOrIdent {
     fn parse(input: ParseStream) -> Result<Self> {
-        Ok(parse_thisctx_opt(input, false)?.unwrap_or(true.into()))
+        Ok(parse_thisctx_opt(input, false)?.unwrap_or_else(|| true.into()))
     }
 }
 

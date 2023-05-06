@@ -3,8 +3,8 @@ name = "thisctx_impl"
 version = "0.4.0"
 license = "MIT OR Apache-2.0"
 authors = ["loichyan <loichyan@foxmail.com>"]
-edition = "2018"
-rust-version = "1.33"
+edition = "2021"
+rust-version = "1.56"
 
 description = "Macro implementation of the `thisctx` crate"
 readme = "README.md"
@@ -17,4 +17,4 @@ proc-macro = true
 [dependencies]
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = "1.0"
+syn = "2.0"

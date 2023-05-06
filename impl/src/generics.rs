@@ -64,6 +64,7 @@ impl<'a> From<&'a syn::TypeParamBound> for TypeParamBound<'a> {
         match t {
             syn::TypeParamBound::Trait(t) => TypeParamBound::Trait(t),
             syn::TypeParamBound::Lifetime(t) => TypeParamBound::Lifetime(t),
+            _ => unreachable!(),
         }
     }
 }
@@ -110,7 +111,7 @@ impl<'a> GenericsAnalyzer<'a> {
                     WherePredicate::Lifetime(lt) => {
                         new.update_clause(&lt.lifetime, lt.bounds.iter(), predicate);
                     }
-                    WherePredicate::Eq(_) => new.extra_bounds.push(predicate),
+                    _ => unreachable!(),
                 }
             }
         }
@@ -185,6 +186,7 @@ impl<'a, 'b> ImplIntersects<'a, 'b> {
                     match bound {
                         syn::TypeParamBound::Trait(ty) => self.path(true, &ty.path),
                         syn::TypeParamBound::Lifetime(lt) => self.callback(lt),
+                        _ => (),
                     }
                 }
             }
@@ -217,7 +219,7 @@ impl<'a, 'b> ImplIntersects<'a, 'b> {
                             GenericArgument::Lifetime(lt) => self.callback(lt),
                             GenericArgument::Type(ty) => self.ty(ty),
                             GenericArgument::Const(expr) => self.expr(expr),
-                            GenericArgument::Binding(ty) => self.ty(&ty.ty),
+                            // GenericArgument::Binding(ty) => self.ty(&ty.ty),
                             _ => (),
                         }
                     }

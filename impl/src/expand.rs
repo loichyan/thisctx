@@ -81,7 +81,7 @@ pub fn impl_enum(input: Enum) -> TokenStream {
 
 impl<'a> Enum<'a> {
     fn impl_variant(&self, variant: &Variant) -> Option<TokenStream> {
-        if variant.attrs.skip().or(self.attrs.skip()) == Some(true) {
+        if variant.attrs.skip().or_else(|| self.attrs.skip()) == Some(true) {
             return None;
         }
         Some(
