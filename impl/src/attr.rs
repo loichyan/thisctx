@@ -192,7 +192,7 @@ fn parse_options(input: ParseStream, opts: &mut Attrs) -> Result<()> {
     Ok(())
 }
 
-fn parse_attr_error(input: ParseStream) -> Result<AttrError> {
+fn parse_opt_error(input: ParseStream) -> Result<AttrError> {
     syn::custom_keyword!(transparent);
 
     if input.parse::<Option<transparent>>()?.is_some() {
@@ -231,7 +231,7 @@ pub fn get(input: &[Attribute]) -> Result<Attrs> {
                 attrs.source = Some(AttrSource);
             } else if path == "error" {
                 ensure_once!(error);
-                attrs.error = Some(attr.parse_args_with(parse_attr_error)?);
+                attrs.error = Some(attr.parse_args_with(parse_opt_error)?);
             }
         }
     }

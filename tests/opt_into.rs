@@ -33,7 +33,7 @@ enum Enum {
 struct Struct(String);
 
 #[test]
-fn attr_into() {
+fn opt_into() {
     let _: Error = Variant1("What").build();
     let _: Error2 = Variant1("is").build();
     let _: Error = Variant2("going").build();

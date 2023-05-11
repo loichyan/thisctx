@@ -13,7 +13,7 @@ mod error {
 }
 
 #[test]
-fn attr_vis() {
+fn opt_vis() {
     error::PubVariant(0).build();
     error::PubCrateVariant(0).build();
 }
