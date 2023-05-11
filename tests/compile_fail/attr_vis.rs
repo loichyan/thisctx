@@ -4,14 +4,14 @@ mod error {
     use thisctx::WithContext;
 
     #[derive(WithContext)]
-    #[thisctx(visibility = "pub(crate)")]
+    #[thisctx(vis = "pub(crate)")]
     pub enum Error {
-        #[thisctx(visibility = "pub")]
+        #[thisctx(vis = "pub")]
         PubVariant(i32),
         PubCrateVariant(i32),
-        #[thisctx(visibility = "")]
+        #[thisctx(vis = "")]
         PrivateVariant(i32),
-        PrivateField(#[thisctx(visibility = "")] i32),
+        PrivateField(#[thisctx(vis = "")] i32),
     }
 }
 

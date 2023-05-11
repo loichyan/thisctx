@@ -20,7 +20,7 @@ pub struct Attrs {
     pub skip: Option<bool>,
     pub suffix: Option<FlagOrIdent>,
     pub unit: Option<bool>,
-    pub visibility: Option<Visibility>,
+    pub vis: Option<Visibility>,
 }
 
 pub enum AttrError {
@@ -152,34 +152,34 @@ fn parse_options(input: ParseStream, opts: &mut Attrs) -> Result<()> {
         lookahead = input.lookahead1();
 
         if lookahead.peek(Token![pub]) {
-            ensure_once!(visibility);
-            opts.visibility = Some(input.parse()?);
+            ensure_once!(vis);
+            opts.vis = Some(input.parse()?);
         } else {
             parse_opts! {
-                attr       += attr       use parse_any(),
-                attr       #= cfg,
-                attr       #= cfg_attr,
-                attr       #= derive,
-                attr       #= doc,
+                attr   += attr       use parse_any(),
+                attr   #= cfg,
+                attr   #= cfg_attr,
+                attr   #= derive,
+                attr   #= doc,
 
-                generic     = generic    use parse_bool(false),
-                generic     = no_generic use parse_bool(true),
+                generic = generic    use parse_bool(false),
+                generic = no_generic use parse_bool(true),
 
-                into       += into       use parse_any(),
+                into   += into       use parse_any(),
 
-                module      = module     use parse_flag_or_ident(false),
-                module      = no_module  use parse_flag_or_ident(true),
+                module  = module     use parse_flag_or_ident(false),
+                module  = no_module  use parse_flag_or_ident(true),
 
-                skip        = skip       use parse_bool(false),
-                skip        = no_skip    use parse_bool(true),
+                skip    = skip       use parse_bool(false),
+                skip    = no_skip    use parse_bool(true),
 
-                suffix      = suffix     use parse_flag_or_ident(false),
-                suffix      = no_suffix  use parse_flag_or_ident(true),
+                suffix  = suffix     use parse_flag_or_ident(false),
+                suffix  = no_suffix  use parse_flag_or_ident(true),
 
-                unit        = unit       use parse_bool(false),
-                unit        = no_unit    use parse_bool(true),
+                unit    = unit       use parse_bool(false),
+                unit    = no_unit    use parse_bool(true),
 
-                visibility  = visibility use parse_any(),
+                vis     = vis        use parse_any(),
             }
         }
 

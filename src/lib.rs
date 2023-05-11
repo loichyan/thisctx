@@ -26,16 +26,16 @@
 //! You can use the `#[thisctx]` attribute with the following options to customize
 //! the expanded code:
 //!
-//! | Option       | Type            | Inherited | Container | Variant | Field |
-//! | ------------ | --------------- | --------- | --------- | ------- | ----- |
-//! | `attr`       | `TokenStream[]` | ✔         | ✔         | ✔       | ✔     |
-//! | `generic`    | `bool`          | ✔         | ✔         | ✔       | ✔     |
-//! | `into`       | `Type[]`        | ✔         | ✔         | ✔       |       |
-//! | `module`     | `bool \| Ident` |           | ✔         |         |       |
-//! | `skip`       | `Ident`         | ✔         | ✔         | ✔       |       |
-//! | `suffix`     | `bool \| Ident` | ✔         | ✔         | ✔       |       |
-//! | `unit`       | `bool`          | ✔         | ✔         | ✔       |       |
-//! | `visibility` | `Visibility`    | ✔         | ✔         | ✔       | ✔     |
+//! | Option    | Type            | Inherited | Container | Variant | Field |
+//! | --------- | --------------- | --------- | --------- | ------- | ----- |
+//! | `attr`    | `TokenStream[]` | ✔         | ✔         | ✔       | ✔     |
+//! | `generic` | `bool`          | ✔         | ✔         | ✔       | ✔     |
+//! | `into`    | `Type[]`        | ✔         | ✔         | ✔       |       |
+//! | `module`  | `bool \| Ident` |           | ✔         |         |       |
+//! | `skip`    | `Ident`         | ✔         | ✔         | ✔       |       |
+//! | `suffix`  | `bool \| Ident` | ✔         | ✔         | ✔       |       |
+//! | `unit`    | `bool`          | ✔         | ✔         | ✔       |       |
+//! | `vis`     | `Visibility`    | ✔         | ✔         | ✔       | ✔     |
 //!
 //! The `#[source]` and `#[error]` attributes defined in `thiserror` are also
 //! checked to determine the source error type.
@@ -44,9 +44,9 @@
 //!
 //! `#[thisctx]` supports two syntaxes for passing arguments to an option:
 //!
-//! - Put tokens directly in parentheses, e.g. `#[thisctx(visibility(pub))]`
-//! - Use a string literal, e.g. `#[thisctx(visibility = "pub")]`, which is useful
-//!   in older versions of `rustc` that don't support arbitrary tokens in non-macro
+//! - Put tokens directly in parentheses, e.g. `#[thisctx(vis(pub))]`
+//! - Use a string literal, e.g. `#[thisctx(vis = "pub")]`, which is useful in older
+//!   versions of `rustc` that don't support arbitrary tokens in non-macro
 //!   attributes.
 //!
 //! An option of type `T[]` can occur multiple times in the same node, while other
@@ -355,7 +355,7 @@
 //! struct ParseIntError;
 //! ```
 //!
-//! ## `thisctx.visibility`
+//! ## `thisctx.vis`
 //!
 //! This option is used to change the visibility of the generated types and fields
 //! and can be written in shorthand as `#[pub(...)]`.

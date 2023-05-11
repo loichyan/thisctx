@@ -108,7 +108,7 @@ impl Attrs {
         if content.is_empty() {
             return content;
         }
-        let vis = self.visibility.as_ref().unwrap_or(&input.vis);
+        let vis = self.vis.as_ref().unwrap_or(&input.vis);
         let module = self.module.as_ref().and_then(|module| match module {
             FlagOrIdent::Flag(true) => Some(Ident::new(
                 &camel_to_snake(&input.ident.to_string()),
@@ -145,7 +145,7 @@ struct ContextOptions<'a> {
     into: Vec<&'a Type>,
     suffix: Option<&'a FlagOrIdent>,
     unit: Option<bool>,
-    visibility: Option<&'a Visibility>,
+    vis: Option<&'a Visibility>,
 }
 
 impl<'a> ContextOptions<'a> {
@@ -175,7 +175,7 @@ impl<'a> ContextOptions<'a> {
             update_option!(=generic);
             update_option!(=unit);
             update_option!(&suffix);
-            update_option!(&visibility);
+            update_option!(&vis);
             update_option!(+attr);
             update_option!(+into);
         }
@@ -207,7 +207,7 @@ impl<'a> Context<'a> {
 
     fn impl_all(&self) -> TokenStream {
         // Analyze feilds of contexts.
-        let context_vis = self.options.visibility.unwrap_or(&self.input.vis);
+        let context_vis = self.options.vis.unwrap_or(&self.input.vis);
         let mut source_field_index = self.find_source_field();
         let mut source_ty = None;
         let mut fields_analyzer = FieldsAnalyzer::default();
@@ -254,7 +254,7 @@ impl<'a> Context<'a> {
             fields_analyzer.push((
                 field_name,
                 FieldInfo {
-                    visibility: field.attrs.visibility.as_ref().unwrap_or(context_vis),
+                    visibility: field.attrs.vis.as_ref().unwrap_or(context_vis),
                     attrs: &field.attrs,
                     ty: field_ty,
                 },
