@@ -17,10 +17,14 @@ enum Error {
         context_1: String,
         context_2: i32,
     },
-    EmptyNamed {},
+    NamedSourceOnly {
+        source: &'static str,
+    },
+    NamedEmpty {},
     UnnamedWithSource(String, #[source] &'static str, i32),
     UnnamedWithoutSource(String, i32),
-    EmptyUnnamed(),
+    UnnamedSourceOnly(#[source] &'static str),
+    UnnamedEmpty(),
     Unit,
 }
 
@@ -61,7 +65,13 @@ fn derive_enum() {
             context_2: 4399
         },
     );
-    assert_eq!(EmptyNamed.build(), Error::EmptyNamed {});
+    assert_eq!(
+        NamedSourceOnly.into_error("blah-blah"),
+        Error::NamedSourceOnly {
+            source: "blah-blah",
+        },
+    );
+    assert_eq!(NamedEmpty.build(), Error::NamedEmpty {});
     assert_eq!(
         UnnamedWithSource("anyhow", 360).into_error("blah"),
         Error::UnnamedWithSource("anyhow".to_owned(), "blah", 360),
@@ -70,6 +80,10 @@ fn derive_enum() {
         UnnamedWithoutSource("failed", 1314).build(),
         Error::UnnamedWithoutSource("failed".to_owned(), 1314),
     );
-    assert_eq!(EmptyUnnamed.build(), Error::EmptyUnnamed());
+    assert_eq!(
+        UnnamedSourceOnly.into_error("blah-blah"),
+        Error::UnnamedSourceOnly("blah-blah"),
+    );
+    assert_eq!(UnnamedEmpty.build(), Error::UnnamedEmpty());
     assert_eq!(Unit.build(), Error::Unit);
 }

@@ -5,6 +5,7 @@ use syn::{
     token, Attribute, Error, Ident, LitBool, LitStr, Meta, Result, Token, Type, Visibility,
 };
 
+// TODO: parse AST and validate
 #[derive(Default)]
 pub struct Attrs {
     // Attributes defined in thiserror
@@ -23,15 +24,19 @@ pub struct Attrs {
     pub vis: Option<Visibility>,
 }
 
+#[derive(Clone, Copy)]
 pub enum AttrError {
     Transparent,
     Others,
 }
 
+#[derive(Clone, Copy)]
 pub struct AttrSource;
 
+#[derive(Clone, Copy)]
 pub struct AttrThisctx;
 
+#[derive(Clone)]
 pub enum FlagOrIdent {
     Flag(bool),
     Ident(Ident),

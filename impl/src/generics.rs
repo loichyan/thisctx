@@ -1,19 +1,25 @@
-use std::collections::{btree_map::Entry as MapEntry, BTreeMap as Map};
+use std::collections::{btree_map::Entry, BTreeMap as Map};
 use syn::{
-    Expr, GenericArgument, GenericParam, Generics, Ident, Lifetime, PathArguments, TraitBound,
-    Type, WherePredicate,
+    Expr, GenericArgument, GenericParam, Generics, Ident, Lifetime, Path, PathArguments, QSelf,
+    ReturnType, TraitBound, Type, TypeParamBound, WherePredicate,
 };
 
 #[derive(Default)]
-pub struct GenericsAnalyzer<'a> {
-    pub bounds: GenericsMap<'a>,
+pub struct ContainerGenerics<'a> {
+    generics: Map<GenericName<'a>, usize>,
+    orders: Vec<GenericInfo<'a>>,
+    /// Bounds that not belong to any container generic.
     pub extra_bounds: Vec<&'a WherePredicate>,
 }
 
-#[derive(Default)]
-pub struct GenericsMap<'a> {
-    indices: Map<GenericName<'a>, usize>,
-    entries: Vec<(GenericName<'a>, GenericBounds<'a>)>,
+pub struct GenericInfo<'a> {
+    pub order: usize,
+    pub name: GenericName<'a>,
+    /// Bounds of this generic, including those from both the definition and the
+    /// where clause.
+    pub bounds: Vec<GenericBound<'a>>,
+    /// Type of a const generic.
+    pub const_ty: Option<&'a Type>,
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -23,263 +29,236 @@ pub enum GenericName<'a> {
 }
 
 impl<'a> From<&'a Ident> for GenericName<'a> {
-    fn from(t: &'a Ident) -> Self {
-        GenericName::Ident(t)
+    fn from(value: &'a Ident) -> Self {
+        Self::Ident(value)
     }
 }
 
 impl<'a> From<&'a Lifetime> for GenericName<'a> {
-    fn from(t: &'a Lifetime) -> Self {
-        GenericName::Lifetime(t)
+    fn from(value: &'a Lifetime) -> Self {
+        Self::Lifetime(value)
     }
 }
 
-#[derive(Default)]
-pub struct GenericBounds<'a> {
-    pub params: Vec<TypeParamBound<'a>>,
-    pub const_ty: Option<&'a Type>,
-    pub selected: bool,
-}
-
 #[derive(Clone, Copy)]
-pub enum TypeParamBound<'a> {
+pub enum GenericBound<'a> {
     Trait(&'a TraitBound),
     Lifetime(&'a Lifetime),
 }
 
-impl<'a> From<&'a TraitBound> for TypeParamBound<'a> {
-    fn from(t: &'a TraitBound) -> Self {
-        TypeParamBound::Trait(t)
-    }
-}
-
-impl<'a> From<&'a Lifetime> for TypeParamBound<'a> {
-    fn from(t: &'a Lifetime) -> Self {
-        TypeParamBound::Lifetime(t)
-    }
-}
-
-impl<'a> From<&'a syn::TypeParamBound> for TypeParamBound<'a> {
-    fn from(t: &'a syn::TypeParamBound) -> Self {
-        match t {
-            syn::TypeParamBound::Trait(t) => TypeParamBound::Trait(t),
-            syn::TypeParamBound::Lifetime(t) => TypeParamBound::Lifetime(t),
-            _ => unreachable!(),
+impl<'a> GenericBound<'a> {
+    fn from_bound(bound: &'a TypeParamBound) -> Option<Self> {
+        match bound {
+            TypeParamBound::Trait(ty) => Some(Self::Trait(ty)),
+            TypeParamBound::Lifetime(lt) => Some(Self::Lifetime(lt)),
+            _ => None,
         }
     }
 }
 
-impl<'a> GenericsAnalyzer<'a> {
-    pub fn intersects(
-        &mut self,
-        ty: &'a Type,
-        cb: impl FnMut(GenericName<'a>, &mut GenericBounds<'a>),
-    ) {
-        ImplIntersects {
-            analyzer: self,
-            cb: Box::new(cb),
-        }
-        .ty(ty);
+impl<'a> From<&'a TraitBound> for GenericBound<'a> {
+    fn from(value: &'a TraitBound) -> Self {
+        Self::Trait(value)
+    }
+}
+
+impl<'a> From<&'a Lifetime> for GenericBound<'a> {
+    fn from(value: &'a Lifetime) -> Self {
+        Self::Lifetime(value)
+    }
+}
+
+impl<'a> ContainerGenerics<'a> {
+    pub fn get<'b, 'c>(&'b self, name: impl Into<GenericName<'c>>) -> Option<&'b GenericInfo<'a>> {
+        self.generics.get(&name.into()).map(|&i| &self.orders[i])
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &GenericInfo<'a>> {
+        self.orders.iter()
     }
 
     pub fn from_syn(generics: &'a Generics) -> Self {
         let mut new = Self::default();
-        // Collect bounds from type parameter.
-        for param in generics.params.iter() {
-            match param {
-                GenericParam::Type(ty) => new.update_params(&ty.ident, ty.bounds.iter()),
-                GenericParam::Lifetime(lt) => new.update_params(&lt.lifetime, lt.bounds.iter()),
-                GenericParam::Const(kst) => {
-                    new.bounds.insert_or_default(&kst.ident).const_ty = Some(&kst.ty)
-                }
-            }
-        }
-        // Collect bounds from where clause.
-        if let Some(clause) = generics.where_clause.as_ref() {
-            for predicate in clause.predicates.iter() {
-                match predicate {
-                    WherePredicate::Type(ty) => match &ty.bounded_ty {
-                        Type::Path(path) if path.qself.is_none() => {
-                            if let Some(ident) = path.path.get_ident() {
-                                new.update_clause(ident, ty.bounds.iter(), predicate);
-                            } else {
-                                new.extra_bounds.push(predicate);
-                            }
-                        }
-                        _ => new.extra_bounds.push(predicate),
-                    },
-                    WherePredicate::Lifetime(lt) => {
-                        new.update_clause(&lt.lifetime, lt.bounds.iter(), predicate);
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        }
+        new.update_from_syn(generics);
         new
     }
 
-    fn update_clause<N, T>(
-        &mut self,
-        name: N,
-        bounds: impl Iterator<Item = T>,
-        predicate: &'a WherePredicate,
-    ) where
-        N: Into<GenericName<'a>>,
-        T: Into<TypeParamBound<'a>>,
-    {
-        match self.bounds.indices.entry(name.into()) {
-            MapEntry::Vacant(_) => self.extra_bounds.push(predicate),
-            MapEntry::Occupied(v) => self
-                .bounds
-                .entries
-                .get_mut(*v.get())
-                .unwrap()
-                .1
-                .params
-                .extend(bounds.map(T::into)),
-        }
-    }
-
-    fn update_params<N, T>(&mut self, name: N, bounds: impl Iterator<Item = T>)
-    where
-        N: Into<GenericName<'a>>,
-        T: Into<TypeParamBound<'a>>,
-    {
-        self.bounds
-            .insert_or_default(name.into())
-            .params
-            .extend(bounds.map(T::into));
-    }
-}
-
-struct ImplIntersects<'a, 'b> {
-    analyzer: &'b mut GenericsAnalyzer<'a>,
-    cb: Box<dyn 'b + FnMut(GenericName<'a>, &mut GenericBounds<'a>)>,
-}
-
-impl<'a, 'b> ImplIntersects<'a, 'b> {
-    fn ty(&mut self, ty: &'a Type) {
-        match ty {
-            Type::Array(ty) => {
-                self.ty(&ty.elem);
-                self.expr(&ty.len);
-            }
-            Type::BareFn(ty) => {
-                for arg in ty.inputs.iter() {
-                    self.ty(&arg.ty);
+    fn update_from_syn(&mut self, generics: &'a Generics) {
+        // Update bounds from generic definitions.
+        for param in generics.params.iter() {
+            match param {
+                GenericParam::Type(ty) => self.update_bounds(
+                    &ty.ident,
+                    ty.bounds.iter().filter_map(GenericBound::from_bound),
+                ),
+                GenericParam::Lifetime(lt) => {
+                    self.update_bounds(&lt.lifetime, lt.bounds.iter().map(GenericBound::from))
                 }
-                self.return_ty(&ty.output);
-            }
-            Type::Group(ty) => self.ty(&ty.elem),
-            Type::Paren(ty) => self.ty(&ty.elem),
-            Type::Path(ty) => self.path(ty.qself.is_none(), &ty.path),
-            Type::Ptr(ty) => self.ty(&ty.elem),
-            Type::Reference(ty) => {
-                if let Some(lt) = ty.lifetime.as_ref() {
-                    self.callback(lt);
-                }
-                self.ty(&ty.elem);
-            }
-            Type::Slice(ty) => self.ty(&ty.elem),
-            Type::TraitObject(ty) => {
-                for bound in ty.bounds.iter() {
-                    match bound {
-                        syn::TypeParamBound::Trait(ty) => self.path(true, &ty.path),
-                        syn::TypeParamBound::Lifetime(lt) => self.callback(lt),
-                        _ => (),
-                    }
+                GenericParam::Const(kst) => {
+                    self.get_or_default(&kst.ident).const_ty = Some(&kst.ty)
                 }
             }
-            Type::Tuple(ty) => {
-                for ty in ty.elems.iter() {
-                    self.ty(ty);
-                }
-            }
-            _ => (),
         }
-    }
 
-    fn expr(&mut self, expr: &'a Expr) {
-        if let Expr::Path(ty) = expr {
-            self.path(ty.qself.is_none(), &ty.path);
-        }
-    }
-
-    fn path(&mut self, check_ident: bool, path: &'a syn::Path) {
-        if check_ident {
-            if let Some(ident) = path.get_ident() {
-                self.callback(ident);
-            }
-        }
-        for segment in path.segments.iter() {
-            match &segment.arguments {
-                PathArguments::AngleBracketed(arguments) => {
-                    for arg in arguments.args.iter() {
-                        match arg {
-                            GenericArgument::Lifetime(lt) => self.callback(lt),
-                            GenericArgument::Type(ty) => self.ty(ty),
-                            GenericArgument::Const(expr) => self.expr(expr),
-                            // GenericArgument::Binding(ty) => self.ty(&ty.ty),
-                            _ => (),
+        if let Some(clause) = &generics.where_clause {
+            // Find bounds belong to defined generics.
+            for predicate in clause.predicates.iter() {
+                match predicate {
+                    WherePredicate::Type(pred) => {
+                        // Find all generics that appear in this bound.
+                        let intersection = self
+                            .intersection(&pred.bounded_ty)
+                            .into_iter()
+                            .map(|ty| ty.name)
+                            .collect::<Vec<_>>();
+                        if intersection.is_empty() {
+                            self.extra_bounds.push(predicate);
+                        } else {
+                            for name in intersection.into_iter() {
+                                self.update_bounds(
+                                    name,
+                                    pred.bounds.iter().filter_map(GenericBound::from_bound),
+                                );
+                            }
                         }
                     }
-                }
-                PathArguments::Parenthesized(arguments) => {
-                    for ty in arguments.inputs.iter() {
-                        self.ty(ty);
+                    WherePredicate::Lifetime(pred) => {
+                        if let Some(info) = self.get_mut(&pred.lifetime) {
+                            info.bounds
+                                .extend(pred.bounds.iter().map(GenericBound::from));
+                        }
                     }
-                    self.return_ty(&arguments.output);
+                    _ => {}
                 }
-                _ => (),
             }
         }
     }
 
-    fn return_ty(&mut self, ty: &'a syn::ReturnType) {
-        if let syn::ReturnType::Type(_, ty) = &ty {
-            self.ty(ty);
-        }
+    fn update_bounds(
+        &mut self,
+        name: impl Into<GenericName<'a>>,
+        bounds: impl IntoIterator<Item = GenericBound<'a>>,
+    ) {
+        self.get_or_default(name.into()).bounds.extend(bounds)
     }
 
-    fn callback(&mut self, name: impl Into<GenericName<'a>>) {
-        if let Some((key, bounds)) = self.analyzer.bounds.get_mut(name) {
-            (self.cb)(key, bounds);
+    fn get_or_default(&mut self, name: impl Into<GenericName<'a>>) -> &mut GenericInfo<'a> {
+        let name = name.into();
+        let index;
+        match self.generics.entry(name) {
+            Entry::Occupied(val) => index = *val.get(),
+            Entry::Vacant(entry) => {
+                index = self.orders.len();
+                entry.insert(index);
+                self.orders.push(GenericInfo {
+                    order: index,
+                    name,
+                    bounds: Default::default(),
+                    const_ty: None,
+                });
+            }
         }
+        &mut self.orders[index]
+    }
+
+    fn get_mut(&mut self, name: impl Into<GenericName<'a>>) -> Option<&mut GenericInfo<'a>> {
+        self.generics
+            .get(&name.into())
+            .map(|&i| &mut self.orders[i])
+    }
+
+    /// Collects generics used in the given type.
+    pub fn intersection<'b>(&'b self, ty: &Type) -> Vec<&'b GenericInfo<'a>> {
+        let mut crawler = Crawler {
+            generics: self,
+            collection: Default::default(),
+        };
+        crawler.crawl(ty);
+        crawler.collection
     }
 }
 
-impl<'a> GenericsMap<'a> {
-    pub fn iter(&self) -> impl Iterator<Item = (GenericName<'a>, &GenericBounds<'a>)> {
-        self.entries.iter().map(|(name, bounds)| (*name, bounds))
-    }
+struct Crawler<'a, 'b> {
+    generics: &'b ContainerGenerics<'a>,
+    collection: Vec<&'b GenericInfo<'a>>,
+}
 
-    fn insert_or_default<N>(&mut self, name: N) -> &mut GenericBounds<'a>
-    where
-        N: Into<GenericName<'a>>,
-    {
-        let name = name.into();
-        let index;
-        match self.indices.entry(name) {
-            MapEntry::Occupied(v) => index = *v.get(),
-            MapEntry::Vacant(_) => {
-                index = self.entries.len();
-                self.indices.insert(name, index);
-                self.entries.push((name, <_>::default()));
+impl<'a, 'b> Crawler<'a, 'b> {
+    fn crawl(&mut self, ty: &Type) {
+        match ty {
+            Type::Array(a) => {
+                self.crawl(&a.elem);
+                self.crawl_expr(&a.len);
             }
-        };
-        &mut self.entries.get_mut(index).unwrap().1
+            Type::BareFn(f) => {
+                self.crawl_fn(f.inputs.iter().map(|arg| &arg.ty), &f.output);
+            }
+            Type::Group(g) => self.crawl(&g.elem),
+            Type::ImplTrait(i) => i.bounds.iter().for_each(|b| self.crawl_bound(b)),
+            Type::Paren(p) => self.crawl(&p.elem),
+            Type::Path(p) => self.crawl_path(p.qself.as_ref(), &p.path),
+            Type::Ptr(p) => self.crawl(&p.elem),
+            Type::Reference(r) => {
+                if let Some(lt) = &r.lifetime {
+                    self.try_collect(lt);
+                }
+                self.crawl(&r.elem);
+            }
+            Type::Slice(s) => self.crawl(&s.elem),
+            Type::TraitObject(t) => t.bounds.iter().for_each(|b| self.crawl_bound(b)),
+            Type::Tuple(t) => t.elems.iter().for_each(|ty| self.crawl(&ty)),
+            _ => {}
+        }
     }
 
-    pub fn get_mut<N>(&mut self, name: N) -> Option<(GenericName<'a>, &mut GenericBounds<'a>)>
-    where
-        N: Into<GenericName<'a>>,
-    {
-        if let Some(index) = self.indices.get(&name.into()) {
-            self.entries
-                .get_mut(*index)
-                .map(|(name, bounds)| (*name, bounds))
-        } else {
-            None
+    fn crawl_path(&mut self, qself: Option<&QSelf>, path: &Path) {
+        if let Some(qself) = &qself {
+            self.crawl(&qself.ty);
+        } else if let Some(ident) = path.get_ident() {
+            self.try_collect(ident);
+        }
+        path.segments.iter().for_each(|seg| match &seg.arguments {
+            PathArguments::AngleBracketed(a) => a.args.iter().for_each(|arg| match arg {
+                GenericArgument::Lifetime(lt) => self.try_collect(lt),
+                GenericArgument::Type(ty) => self.crawl(ty),
+                GenericArgument::Const(kst) => self.crawl_expr(kst),
+                GenericArgument::AssocType(a) => self.crawl(&a.ty),
+                GenericArgument::AssocConst(a) => self.crawl_expr(&a.value),
+                _ => {}
+            }),
+            PathArguments::Parenthesized(p) => {
+                self.crawl_fn(p.inputs.iter(), &p.output);
+            }
+            PathArguments::None => {}
+        });
+    }
+
+    fn crawl_expr(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Path(p) => self.crawl_path(p.qself.as_ref(), &p.path),
+            _ => {}
+        }
+    }
+
+    fn crawl_fn<'c>(&mut self, inputs: impl IntoIterator<Item = &'c Type>, output: &'c ReturnType) {
+        inputs.into_iter().for_each(|ty| self.crawl(ty));
+        match output {
+            ReturnType::Type(_, ty) => self.crawl(ty),
+            ReturnType::Default => {}
+        }
+    }
+
+    fn crawl_bound(&mut self, bound: &TypeParamBound) {
+        match bound {
+            TypeParamBound::Trait(ty) => self.crawl_path(None, &ty.path),
+            TypeParamBound::Lifetime(lt) => self.try_collect(lt),
+            _ => {}
+        }
+    }
+
+    fn try_collect<'c>(&mut self, name: impl Into<GenericName<'c>>) {
+        if let Some(info) = self.generics.get(name) {
+            self.collection.push(info);
         }
     }
 }

@@ -6,6 +6,7 @@ extern crate proc_macro;
 
 mod ast;
 mod attr;
+mod context;
 mod expand;
 mod generics;
 
@@ -15,7 +16,7 @@ use syn::{parse_macro_input, DeriveInput};
 #[proc_macro_derive(WithContext, attributes(error, source, thisctx))]
 pub fn derive_with_context(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    expand::derive(&input)
+    expand::expand(&input)
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }

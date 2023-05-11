@@ -1,561 +1,358 @@
 use crate::{
-    ast::{Enum, Field, Input, Struct, Variant},
-    attr::{AttrError, Attrs, FlagOrIdent},
-    generics::{GenericName, GenericsAnalyzer, TypeParamBound},
+    ast::{Delimiter, Input},
+    context::{ContextInfo, FieldType},
+    generics::{ContainerGenerics, GenericBound, GenericName},
 };
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, ToTokens};
-use syn::{DeriveInput, Fields, Ident, Index, Meta, Result, Token, Type, Visibility};
+use quote::{quote, ToTokens};
+use syn::{DeriveInput, Result, Visibility};
 
-macro_rules! new_type_quote {
-    ($($name:ident($($tt:tt)*);)*) => {$(
-        #[allow(non_camel_case_types)]
-        struct $name;
-        impl ToTokens for $name {
-            #[inline]
-            fn to_tokens(&self, tokens: &mut ::proc_macro2::TokenStream) {
-                quote::quote!($($tt)*).to_tokens(tokens)
-            }
-        }
-    )*};
+macro_rules! quote_to {
+    ($tokens:expr=> $($tt:tt)*) => {{
+        let mut tokens: &mut ::proc_macro2::TokenStream = $tokens;
+        ::quote::quote_each_token!(tokens $($tt)*);
+    }};
 }
 
-new_type_quote!(
-    // Types
-    NONE_SOURCE  (::thisctx::NoneSource);
+macro_rules! Tk {
+    ($($tt:tt)*) => {{ <syn::Token![$($tt)*]>::default() }};
+}
 
-    // Identifiers
-    I_SOURCE_VAR (source);
-
-    // Traits
-    T_DEFAULT    (::core::default::Default);
-    T_FROM       (::core::convert::From);
-    T_INTO       (::core::convert::Into);
-    T_INTO_ERROR (::thisctx::IntoError);
-);
-
-const DEFAULT_SUFFIX: &str = "Context";
-
-pub fn derive(node: &DeriveInput) -> Result<TokenStream> {
-    let input = Input::from_syn(node)?;
-    Ok(match input {
-        Input::Struct(input) => impl_struct(input).unwrap_or_default(),
-        Input::Enum(input) => impl_enum(input),
+pub fn expand(input: &DeriveInput) -> Result<TokenStream> {
+    let generics = ContainerGenerics::from_syn(&input.generics);
+    let _input = Input::from_syn(&generics, input)?;
+    let (module, contexts) = ContextInfo::collect_from(&_input);
+    let expanded = contexts
+        .into_iter()
+        .map(|c| expand_context(&c))
+        .collect::<TokenStream>();
+    Ok(if let Some(module) = module {
+        let vis = &input.vis;
+        quote!(#vis mod #module { use super::*; #expanded })
+    } else {
+        expanded
     })
 }
 
-pub fn impl_struct(input: Struct) -> Option<TokenStream> {
-    if input.attrs.skip == Some(true) {
-        return None;
-    }
-    let mut options = ContextOptions::inherited_from(&[&input.attrs]);
-    if options.suffix.is_none() {
-        options.suffix = Some(&FlagOrIdent::Flag(true));
-    }
-    Some(
-        input.attrs.with_module(
-            input.original,
-            Context {
-                input: input.original,
-                variant: None,
-                surround: Surround::from_fields(&input.data.fields),
-                options,
-                ident: &input.original.ident,
-                fields: &input.fields,
-                transparent: input.attrs.is_transparent(),
-            }
-            .impl_all(),
-        ),
-    )
-}
+fn expand_context(context: &ContextInfo) -> TokenStream {
+    let &ContextInfo {
+        ref container_name,
+        ref container_variant,
+        container_delimiter,
+        name: ref context_name,
+        source_field,
+        ..
+    } = context;
 
-pub fn impl_enum(input: Enum) -> TokenStream {
-    let mut tokens = TokenStream::default();
-    for variant in input.variants.iter() {
-        if let Some(t) = input.impl_variant(variant) {
-            tokens.extend(t);
-        }
-    }
-    input.attrs.with_module(input.original, tokens)
-}
+    let context_ty = {
+        let generics = QuoteGenerics(context).with_generated();
+        QuoteWith(move |tokens| quote_to!(tokens=> #context_name::<#generics>))
+    };
+    let context_definition = {
+        let ContextInfo { attr, vis, .. } = context;
+        let generics = QuoteGenerics(context)
+            .is_definition()
+            .with_generated()
+            .with_default_ty();
+        let fileds = QuoteFields(context);
+        QuoteWith(move |tokens| {
+            let body = QuoteBody(context.delimiter, &fileds);
+            quote_to!(tokens=> #(#[#attr])* #vis struct #context_name <#generics> #body);
+        })
+    };
 
-impl<'a> Enum<'a> {
-    fn impl_variant(&self, variant: &Variant) -> Option<TokenStream> {
-        if variant.attrs.skip.or(self.attrs.skip) == Some(true) {
-            return None;
-        }
-        Some(
-            Context {
-                input: self.original,
-                variant: Some(&variant.original.ident),
-                surround: Surround::from_fields(&variant.original.fields),
-                options: ContextOptions::inherited_from(&[&self.attrs, &variant.attrs]),
-                ident: &variant.original.ident,
-                fields: &variant.fields,
-                transparent: variant.attrs.is_transparent(),
-            }
-            .impl_all(),
-        )
-    }
-}
+    let constructor_ty = {
+        let generics = QuoteGenerics(context).with_non_selected();
+        QuoteWith(move |tokens| quote_to!(tokens=> #container_name::<#generics>))
+    };
+    let constructor_expr = {
+        let colon2 = container_variant.map(|_| Tk![::]);
+        let fields = QuoteFields(context).is_constructor();
+        QuoteWith(move |tokens| {
+            let body = QuoteBody(container_delimiter, &fields).is_expr();
+            quote_to!(tokens=> #constructor_ty #colon2 #container_variant #body);
+        })
+    };
 
-impl Attrs {
-    fn is_transparent(&self) -> bool {
-        matches!(self.error.as_ref(), Some(AttrError::Transparent))
-    }
-
-    fn with_module(&self, input: &DeriveInput, content: TokenStream) -> TokenStream {
-        if content.is_empty() {
-            return content;
-        }
-        let vis = self.vis.as_ref().unwrap_or(&input.vis);
-        let module = self.module.as_ref().and_then(|module| match module {
-            FlagOrIdent::Flag(true) => Some(Ident::new(
-                &camel_to_snake(&input.ident.to_string()),
-                input.ident.span(),
-            )),
-            FlagOrIdent::Ident(ident) => Some(ident.clone()),
-            FlagOrIdent::Flag(false) => None,
-        });
-        if let Some(module) = module {
-            quote!(#vis mod #module {
-                use super::*;
-                #content
-            })
+    let source_ty = QuoteWith(|tokens| {
+        if let Some(ty) = source_field.map(|s| &s.ty) {
+            quote_to!(tokens=> #ty);
         } else {
-            content
+            quote_to!(tokens=> ::thisctx::private::NoneSource);
         }
-    }
-}
+    });
 
-struct Context<'a> {
-    input: &'a DeriveInput,
-    variant: Option<&'a Ident>,
-    surround: Surround,
-    options: ContextOptions<'a>,
-    ident: &'a Ident,
-    fields: &'a [Field<'a>],
-    transparent: bool,
-}
+    let impl_generics = QuoteGenerics(context)
+        .is_definition()
+        .with_non_selected()
+        .with_generated();
+    let impl_bounds = QuoteBounds(context);
 
-#[derive(Default)]
-struct ContextOptions<'a> {
-    attr: Vec<&'a Meta>,
-    generic: Option<bool>,
-    into: Vec<&'a Type>,
-    suffix: Option<&'a FlagOrIdent>,
-    unit: Option<bool>,
-    vis: Option<&'a Visibility>,
-}
+    let context_impls = QuoteWith(move |tokens| {
+        std::iter::once(&constructor_ty as &dyn ToTokens)
+            .chain(context.into.iter().map(|t| t as &dyn ToTokens))
+            .for_each(|error_ty| {
+                let into_error = QuoteWith(
+                    |tokens| quote_to!(tokens=> ::thisctx::private::IntoError::<#error_ty>),
+                );
 
-impl<'a> ContextOptions<'a> {
-    fn inherited_from(opts_chain: &[&'a Attrs]) -> Self {
-        let mut new = ContextOptions::default();
-        let mut opts;
-
-        macro_rules! update_option {
-            (=$opt:ident) => {
-                if new.$opt.is_none() {
-                    new.$opt = opts.$opt;
-                }
-            };
-            (&$opt:ident) => {
-                if new.$opt.is_none() {
-                    new.$opt = opts.$opt.as_ref();
-                }
-            };
-            (+$opt:ident) => {
-                new.$opt.extend(opts.$opt.iter());
-            };
-        }
-
-        for t in opts_chain.iter().rev() {
-            opts = t;
-
-            update_option!(=generic);
-            update_option!(=unit);
-            update_option!(&suffix);
-            update_option!(&vis);
-            update_option!(+attr);
-            update_option!(+into);
-        }
-
-        new
-    }
-}
-
-impl<'a> Context<'a> {
-    fn find_source_field(&self) -> usize {
-        if self.transparent {
-            return 0;
-        }
-        for (i, field) in self.fields.iter().enumerate() {
-            if field.attrs.source.is_some() {
-                return i;
-            }
-        }
-        for (i, field) in self.fields.iter().enumerate() {
-            match &field.original.ident {
-                Some(ident) if ident == "source" => {
-                    return i;
-                }
-                _ => (),
-            }
-        }
-        self.fields.len()
-    }
-
-    fn impl_all(&self) -> TokenStream {
-        // Analyze feilds of contexts.
-        let context_vis = self.options.vis.unwrap_or(&self.input.vis);
-        let mut source_field_index = self.find_source_field();
-        let mut source_ty = None;
-        let mut fields_analyzer = FieldsAnalyzer::default();
-        let mut generics_analyzer = GenericsAnalyzer::from_syn(&self.input.generics);
-        let mut index = 0;
-        for field in self.fields {
-            let original_ty = &field.original.ty;
-            let field_name = field
-                .original
-                .ident
-                .as_ref()
-                .map(FieldName::Named)
-                .unwrap_or_else(|| FieldName::Unnamed(index.into()));
-            let field_ty;
-            // Check if it's a source field.
-            if index == source_field_index {
-                // Make index of source field unreachable.
-                source_field_index = self.fields.len();
-                source_ty = Some(original_ty);
-                field_ty = FieldType::Source;
-            } else {
-                let mut generated = true;
-                // Check if type of the field intersects with input generics.
-                generics_analyzer.intersects(original_ty, |_, bounds| {
-                    generated = false;
-                    bounds.selected = true;
-                });
-                generated =
-                    generated && field.attrs.generic.or(self.options.generic) != Some(false);
-                field_ty = if generated {
-                    // Generate a new type for conversion.
-                    let generated = if let FieldName::Named(name) = field_name {
-                        format_ident!("__T{}", name)
-                    } else {
-                        format_ident!("__T{}", index)
-                    };
-                    FieldType::Generated(generated, original_ty)
-                } else {
-                    FieldType::Original(original_ty)
-                };
-                // Increase index.
-                index += 1;
-            }
-            fields_analyzer.push((
-                field_name,
-                FieldInfo {
-                    visibility: field.attrs.vis.as_ref().unwrap_or(context_vis),
-                    attrs: &field.attrs,
-                    ty: field_ty,
-                },
-            ))
-        }
-        let has_source = source_ty.is_some();
-        let is_unit = index == 0;
-
-        // Generate type of context.
-        let context_ident = {
-            let ident = self.ident;
-            let span = self.ident.span();
-            match self.options.suffix {
-                Some(FlagOrIdent::Flag(true)) => {
-                    format_ident!("{}{}", ident, DEFAULT_SUFFIX, span = span)
-                }
-                Some(FlagOrIdent::Ident(suffix)) => {
-                    format_ident!("{}{}", ident, suffix, span = span)
-                }
-                _ => self.ident.clone(),
-            }
-        };
-
-        // Generate context definition.
-        let context_definition = {
-            let attr = &self.options.attr;
-            let generics1 = quote_analyzed_generics(&generics_analyzer, true, true);
-            let generics2 = quote_generated_generics(&fields_analyzer, true);
-            let fields = quote_context_fileds(&fields_analyzer);
-            let body = if is_unit && self.options.unit != Some(false) {
-                Surround::None
-            } else {
-                self.surround
-            }
-            .quote(fields, true);
-            quote!(
-                #[allow(non_camel_case_types)]
-                #(#[#attr])* #context_vis
-                struct #context_ident<#generics1 #generics2>
-                #body
-            )
-        };
-
-        // Generate constructor expression.
-        let constructor_ty = {
-            let ident = &self.input.ident;
-            let generics = quote_analyzed_generics(&generics_analyzer, false, false);
-            quote!(#ident::<#generics>)
-        };
-        let constructor_expr = {
-            let variant = &self.variant;
-            let colon2 = variant.map(|_| <Token![::]>::default());
-            let fields = quote_consturctor_fileds(&fields_analyzer);
-            let body = self.surround.quote(fields, false);
-            quote!(#constructor_ty #colon2 #variant #body)
-        };
-
-        // Generate context type, source type.
-        let context_ty = {
-            let generics1 = quote_analyzed_generics(&generics_analyzer, false, true);
-            let generics2 = quote_generated_generics(&fields_analyzer, false);
-            quote!(#context_ident::<#generics1 #generics2>)
-        };
-        let source_ty = source_ty
-            .map(ToTokens::to_token_stream)
-            .unwrap_or_else(|| NONE_SOURCE.to_token_stream());
-
-        // Generate generics for `impl` block.
-        let impl_generics = {
-            let generics1 = quote_analyzed_generics(&generics_analyzer, true, false);
-            let generics2 = quote_generated_generics(&fields_analyzer, false);
-            quote!(#generics1 #generics2)
-        };
-        let impl_bounds = quote_impl_bounds(&generics_analyzer, &fields_analyzer);
-
-        // Generate trait implementations.
-        let context_impls = std::iter::once(constructor_ty)
-            .chain(self.options.into.iter().map(ToTokens::to_token_stream))
-            .map(|error_ty| {
-                let into_error_ty = quote!(#T_INTO_ERROR::<#error_ty>);
-                let impl_from_context = if !has_source {
-                    // Generate `impl From for Error` if no `source` is specified.
-                    Some(quote!(
-                        #[allow(non_camel_case_types)]
-                        impl<#impl_generics>
-                        #T_FROM<#context_ty>
-                        for #error_ty
-                        where #impl_bounds
-                            #context_ty: #into_error_ty,
-                            <#context_ty as #into_error_ty>::Source: #T_DEFAULT,
-                        {
-                            #[inline]
-                            fn from(context: #context_ty) -> Self {
-                                #T_INTO_ERROR::into_error(context, #T_DEFAULT::default())
-                            }
-                        }
-                    ))
-                } else {
-                    None
-                };
-                // Generate `impl IntoError for Context`.
-                quote!(
-                    #[allow(non_camel_case_types)]
-                    impl<#impl_generics> #into_error_ty
+                quote_to!(tokens=>
+                    impl<#impl_generics> #into_error
                     for #context_ty
                     where #impl_bounds {
                         type Source = #source_ty;
 
                         #[inline]
-                        fn into_error(self, #I_SOURCE_VAR: #source_ty) -> #error_ty {
-                            #T_FROM::from(#constructor_expr)
+                        fn into_error(self, source: #source_ty) -> #error_ty {
+                            ::thisctx::private::Into::into(#constructor_expr)
                         }
                     }
+                );
 
-                    #impl_from_context
-                )
+                if source_field.is_none() {
+                    quote_to!(tokens=>
+                        impl<#impl_generics> ::thisctx::private::From::<#context_ty>
+                        for #error_ty
+                        where #impl_bounds {
+                            #[inline]
+                            fn from(value: #context_ty) -> Self {
+                                #into_error::into_error(value, ::thisctx::private::NoneSource)
+                            }
+                        }
+                    )
+                }
             });
-        quote!(
-            #context_definition
-            #(#context_impls)*
-        )
+    });
+
+    quote!(
+        #[allow(non_camel_case_types)] #context_definition
+        #[allow(non_camel_case_types)] const _: () = { #context_impls };
+    )
+}
+
+macro_rules! define_quote {
+    (struct $name:ident [$($generics:tt)*] $(where [$($bounds:tt)*])? {
+        $($arg:ident: $arg_ty:ty,)*
+        $(+$flag:ident: bool,)*
+    }) => {
+        #[derive(Clone, Copy)]
+        struct $name <$($generics)*>
+        $(where $($bounds)*)? {
+            $($arg: $arg_ty,)*
+            $($flag: bool,)*
+        }
+
+        #[allow(non_snake_case)]
+        fn $name<$($generics)*>($($arg: $arg_ty,)*) -> $name <$($generics)*>
+        $(where $($bounds)*)? {
+            $name { $($arg,)* $($flag: false,)* }
+        }
+
+        impl <$($generics)*> $name <$($generics)*>
+        $(where $($bounds)*)? {
+            $(fn $flag(self) -> Self {
+                Self { $flag: true, ..self }
+            })*
+        }
+    };
+}
+
+define_quote! {
+    struct QuoteGenerics ['a] {
+        context: &'a ContextInfo<'a>,
+        +is_definition: bool,
+        +with_non_selected: bool,
+        +with_generated: bool,
+        +with_default_ty: bool,
     }
 }
 
-type FieldsAnalyzer<'a> = Vec<(FieldName<'a>, FieldInfo<'a>)>;
-
-enum FieldName<'a> {
-    Named(&'a Ident),
-    Unnamed(Index),
-}
-
-impl ToTokens for FieldName<'_> {
+impl<'a> ToTokens for QuoteGenerics<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        match self {
-            FieldName::Named(t) => t.to_tokens(tokens),
-            FieldName::Unnamed(t) => t.to_tokens(tokens),
+        let &Self {
+            context,
+            is_definition,
+            with_non_selected,
+            with_generated,
+            with_default_ty,
+        } = self;
+
+        context
+            .generics
+            .iter()
+            .filter(|(_, s)| with_non_selected || *s)
+            .for_each(|(g, _)| match g.name {
+                GenericName::Ident(name) => match g.const_ty {
+                    Some(kst) if is_definition => quote_to!(tokens=> const #name: #kst,),
+                    _ => quote_to!(tokens=> #name,),
+                },
+                GenericName::Lifetime(name) => quote_to!(tokens=> #name,),
+            });
+
+        if with_generated {
+            context
+                .fields
+                .iter()
+                .filter_map(|f| {
+                    if let FieldType::Generated(name) = &f.ty {
+                        Some((&f.original.ty, name))
+                    } else {
+                        None
+                    }
+                })
+                .for_each(|(original_ty, name)| {
+                    if with_default_ty {
+                        quote_to!(tokens=> #name = #original_ty,);
+                    } else {
+                        quote_to!(tokens=> #name,);
+                    }
+                });
         }
     }
 }
 
-struct FieldInfo<'a> {
-    visibility: &'a Visibility,
-    attrs: &'a Attrs,
-    ty: FieldType<'a>,
-}
-
-enum FieldType<'a> {
-    Generated(Ident, &'a Type),
-    Original(&'a Type),
-    Source,
-}
-
-#[derive(Clone, Copy)]
-enum Surround {
-    Paren,
-    Brace,
-    None,
-}
-
-impl Surround {
-    fn from_fields(fields: &Fields) -> Self {
-        match fields {
-            Fields::Named(_) => Surround::Brace,
-            Fields::Unnamed(_) => Surround::Paren,
-            Fields::Unit => Surround::None,
-        }
-    }
-
-    fn quote<T: ToTokens>(&self, content: T, trailing_semi: bool) -> TokenStream {
-        let semi = if trailing_semi {
-            Some(<Token![;]>::default())
-        } else {
-            None
-        };
-        match self {
-            Surround::Brace => quote!({#content}),
-            Surround::Paren => quote!((#content) #semi),
-            Surround::None => semi.to_token_stream(),
-        }
+define_quote! {
+    struct QuoteBounds ['a] {
+        context: &'a ContextInfo<'a>,
     }
 }
 
-fn quote_impl_bounds(generics: &GenericsAnalyzer, fields: &FieldsAnalyzer) -> TokenStream {
-    let bounds = generics.bounds.iter().flat_map(|(name, bounds)| {
-        if bounds.params.is_empty() {
-            return None;
-        }
-        let params = bounds.params.iter();
-        Some(quote!(#name: #(#params +)*))
-    });
-    let extra_bounds = generics.extra_bounds.iter().map(ToTokens::to_token_stream);
-    let generated_bounds = fields.iter().flat_map(|(_, info)| {
-        if let FieldType::Generated(ty, original) = &info.ty {
-            Some(quote!(#ty: #T_INTO::<#original>))
-        } else {
-            None
-        }
-    });
-    let all = bounds.chain(extra_bounds).chain(generated_bounds);
-    quote!(#(#all,)*)
+impl<'a> ToTokens for QuoteBounds<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let &Self { context } = self;
+
+        context
+            .generics
+            .iter()
+            .flat_map(|(g, _)| g.bounds.iter().map(|b| (g.name, b)))
+            .for_each(|(name, b)| quote_to!(tokens=> #name: #b,));
+
+        context
+            .fields
+            .iter()
+            .filter_map(|f| {
+                if let FieldType::Generated(name) = & f.ty {
+                    Some((&f.original.ty, name))
+                } else {
+                    None
+                }
+            })
+            .for_each(|(original_ty, name)| {
+                quote_to!(tokens=> #name: ::thisctx::private::Into::<#original_ty>,)
+            });
+
+        let extra = &context.container_generics.extra_bounds;
+        quote_to!(tokens=> #(#extra,)*);
+    }
 }
 
-fn quote_context_fileds(analyzer: &FieldsAnalyzer) -> TokenStream {
-    let fields = analyzer.iter().flat_map(|(name, info)| {
-        if let FieldType::Source = info.ty {
-            return None;
-        }
-        let attrs = &info.attrs.attr;
-        let vis = &info.visibility;
-        let field = if let FieldName::Named(name) = name {
-            Some(quote!(#name:))
-        } else {
-            None
-        };
-        let ty = match &info.ty {
-            FieldType::Original(ty) => ty.to_token_stream(),
-            FieldType::Generated(ty, _) => ty.to_token_stream(),
-            FieldType::Source => unreachable!(),
-        };
-        Some(quote!(#(#[#attrs])* #vis #field #ty))
-    });
-    quote!(#(#fields,)*)
+define_quote! {
+    struct QuoteFields ['a] {
+        context: &'a ContextInfo<'a>,
+        +is_constructor: bool,
+    }
 }
 
-fn quote_consturctor_fileds(analyzer: &FieldsAnalyzer) -> TokenStream {
-    let fields = analyzer.iter().map(|(name, info)| {
-        let field = if let FieldName::Named(name) = name {
-            Some(quote!(#name:))
-        } else {
-            None
-        };
-        let expr = match &info.ty {
-            FieldType::Original(_) => quote!(self.#name),
-            FieldType::Generated(..) => quote!(#T_INTO::into(self.#name)),
-            FieldType::Source => I_SOURCE_VAR.to_token_stream(),
-        };
-        quote!(#field #expr)
-    });
-    quote!(#(#fields,)*)
-}
+impl<'a> ToTokens for QuoteFields<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let &Self {
+            context,
+            is_constructor,
+        } = self;
 
-fn quote_generated_generics(analyzer: &FieldsAnalyzer, emit_default: bool) -> TokenStream {
-    let generics = analyzer.iter().flat_map(|(_, info)| {
-        if let FieldType::Generated(ty, original_ty) = &info.ty {
-            let default = if emit_default {
-                Some(quote!(= #original_ty))
+        context.fields.iter().for_each(|f| {
+            if !is_constructor && matches!(f.ty, FieldType::Source) {
+                return;
+            }
+            let ident = f.original.ident.as_ref();
+            let colon = ident.map(|_| Tk![:]);
+            let vis = if !is_constructor {
+                let vis = match &f.original.vis {
+                    // Use context visibility if not specified.
+                    Visibility::Inherited => self.context.vis,
+                    others => others,
+                };
+                Some(f.attrs.vis.as_ref().unwrap_or(vis))
             } else {
                 None
             };
-            Some(quote!(#ty #default))
-        } else {
-            None
-        }
-    });
-    quote!(#(#generics,)*)
+            quote_to!(tokens=> #vis #ident #colon);
+            let name = &f.name;
+            match &f.ty {
+                FieldType::Generated(ty) => {
+                    if is_constructor {
+                        quote_to!(tokens=> ::thisctx::private::Into::into(self.#name),);
+                    } else {
+                        quote_to!(tokens=> #ty,);
+                    }
+                }
+                FieldType::Original => {
+                    if is_constructor {
+                        quote_to!(tokens=> self.#name,);
+                    } else {
+                        let ty = &f.original.ty;
+                        quote_to!(tokens=> #ty,);
+                    }
+                }
+                FieldType::Source => quote_to!(tokens=> source,),
+            }
+        });
+    }
 }
 
-fn quote_analyzed_generics(
-    analyzer: &GenericsAnalyzer,
-    emit_definition: bool,
-    emit_selected_only: bool,
-) -> TokenStream {
-    let generics = analyzer.bounds.iter().flat_map(|(name, bounds)| {
-        if emit_selected_only && !bounds.selected {
-            return None;
+define_quote! {
+    struct QuoteBody ['a] {
+        delimiter: Delimiter,
+        fields: &'a dyn ToTokens,
+        +is_expr: bool,
+    }
+}
+
+impl<'a> ToTokens for QuoteBody<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let &Self {
+            delimiter,
+            fields,
+            is_expr,
+        } = self;
+        let semi = if !is_expr { Some(Tk![;]) } else { None };
+        match delimiter {
+            Delimiter::Paren => quote_to!(tokens=> ( #fields ) #semi),
+            Delimiter::Brace => quote_to!(tokens=> { #fields }),
+            Delimiter::None => quote_to!(tokens=> #fields #semi),
         }
-        if emit_definition {
-            if let Some(kst_ty) = bounds.const_ty {
-                return Some(quote!(const #name: #kst_ty));
-            }
-        }
-        Some(quote!(#name))
-    });
-    quote!(#(#generics,)*)
+    }
+}
+
+define_quote! {
+    struct QuoteWith [F] where [F: Fn(&mut TokenStream)] {
+        expand: F,
+    }
+}
+
+impl<F> ToTokens for QuoteWith<F>
+where
+    F: Fn(&mut TokenStream),
+{
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        (self.expand)(tokens);
+    }
 }
 
 impl ToTokens for GenericName<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
-            GenericName::Ident(t) => t.to_tokens(tokens),
-            GenericName::Lifetime(t) => t.to_tokens(tokens),
+            Self::Ident(t) => t.to_tokens(tokens),
+            Self::Lifetime(l) => l.to_tokens(tokens),
         }
     }
 }
 
-impl ToTokens for TypeParamBound<'_> {
+impl ToTokens for GenericBound<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
-            TypeParamBound::Trait(t) => t.to_tokens(tokens),
-            TypeParamBound::Lifetime(t) => t.to_tokens(tokens),
+            Self::Trait(t) => t.to_tokens(tokens),
+            Self::Lifetime(l) => l.to_tokens(tokens),
         }
     }
-}
-
-fn camel_to_snake(s: &str) -> String {
-    let mut snake = String::default();
-    for (i, ch) in s.char_indices() {
-        if i > 0 && ch.is_ascii_uppercase() {
-            snake.push('_');
-        }
-        snake.push(ch.to_ascii_lowercase());
-    }
-    snake
 }

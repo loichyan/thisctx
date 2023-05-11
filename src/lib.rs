@@ -388,6 +388,8 @@
 #![no_std]
 
 pub use thisctx_impl::WithContext;
+#[doc(hidden)]
+pub mod private;
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub struct NoneSource;

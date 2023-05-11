@@ -6,6 +6,7 @@ struct NamedWithSource {
     source: &'static str,
     context_2: i32,
 }
+const _: () = {};
 
 #[derive(Debug, Eq, PartialEq, WithContext)]
 struct NamedWithSourceAttr {
@@ -22,7 +23,12 @@ struct NamedWithoutSource {
 }
 
 #[derive(Debug, Eq, PartialEq, WithContext)]
-struct EmptyNamed {}
+struct NamedSourceOnly {
+    source: &'static str,
+}
+
+#[derive(Debug, Eq, PartialEq, WithContext)]
+struct NamedEmpty {}
 
 #[derive(Debug, Eq, PartialEq, WithContext)]
 struct UnnamedWithSource(String, #[source] &'static str, i32);
@@ -31,7 +37,10 @@ struct UnnamedWithSource(String, #[source] &'static str, i32);
 struct UnnamedWithoutSource(String, i32);
 
 #[derive(Debug, Eq, PartialEq, WithContext)]
-struct EmptyUnnamed();
+struct UnnamedSourceOnly(#[source] &'static str);
+
+#[derive(Debug, Eq, PartialEq, WithContext)]
+struct UnnamedEmpty();
 
 #[derive(Debug, Eq, PartialEq, WithContext)]
 struct Unit;
@@ -73,7 +82,13 @@ fn derive_enum() {
             context_2: 4399
         },
     );
-    assert_eq!(EmptyNamedContext.build(), EmptyNamed {});
+    assert_eq!(
+        NamedSourceOnlyContext.into_error("blah-blah"),
+        NamedSourceOnly {
+            source: "blah-blah",
+        },
+    );
+    assert_eq!(NamedEmptyContext.build(), NamedEmpty {});
     assert_eq!(
         UnnamedWithSourceContext("anyhow", 360).into_error("blah"),
         UnnamedWithSource("anyhow".to_owned(), "blah", 360),
@@ -82,6 +97,10 @@ fn derive_enum() {
         UnnamedWithoutSourceContext("failed", 1314).build(),
         UnnamedWithoutSource("failed".to_owned(), 1314),
     );
-    assert_eq!(EmptyUnnamedContext.build(), EmptyUnnamed());
+    assert_eq!(
+        UnnamedSourceOnlyContext.into_error("blah-blah"),
+        UnnamedSourceOnly("blah-blah"),
+    );
+    assert_eq!(UnnamedEmptyContext.build(), UnnamedEmpty());
     assert_eq!(UnitContext.build(), Unit);
 }

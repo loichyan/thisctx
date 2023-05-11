@@ -1,5 +1,8 @@
-use crate::attr::{self, Attrs};
-use syn::{Data, DataEnum, DataStruct, DeriveInput, Error, Fields, Result};
+use crate::{
+    attr::Attrs,
+    generics::{ContainerGenerics, GenericInfo},
+};
+use syn::{Data, DataEnum, DataStruct, DeriveInput, Fields, Result};
 
 pub enum Input<'a> {
     Struct(Struct<'a>),
@@ -10,6 +13,7 @@ pub struct Struct<'a> {
     pub original: &'a DeriveInput,
     pub data: &'a DataStruct,
     pub attrs: Attrs,
+    pub generics: &'a ContainerGenerics<'a>,
     pub fields: Vec<Field<'a>>,
 }
 
@@ -17,6 +21,7 @@ pub struct Enum<'a> {
     pub original: &'a DeriveInput,
     pub data: &'a DataEnum,
     pub attrs: Attrs,
+    pub generics: &'a ContainerGenerics<'a>,
     pub variants: Vec<Variant<'a>>,
 }
 
@@ -29,68 +34,73 @@ pub struct Variant<'a> {
 pub struct Field<'a> {
     pub original: &'a syn::Field,
     pub attrs: Attrs,
+    /// Container generics used by this field.
+    pub generics: Vec<&'a GenericInfo<'a>>,
 }
 
 impl<'a> Input<'a> {
-    pub fn from_syn(node: &'a DeriveInput) -> Result<Self> {
-        match &node.data {
-            Data::Struct(data) => Struct::from_syn(node, data).map(Input::Struct),
-            Data::Enum(data) => Enum::from_syn(node, data).map(Input::Enum),
-            Data::Union(_) => Err(Error::new_spanned(node, "unions are not supported")),
-        }
-    }
-}
-
-impl<'a> Struct<'a> {
-    fn from_syn(node: &'a DeriveInput, data: &'a DataStruct) -> Result<Self> {
-        let attrs = attr::get(&node.attrs)?;
-        let fields = Field::from_syn_many(&data.fields)?;
-        Ok(Struct {
-            original: node,
-            data,
-            attrs,
-            fields,
-        })
-    }
-}
-
-impl<'a> Enum<'a> {
-    fn from_syn(node: &'a DeriveInput, data: &'a DataEnum) -> Result<Self> {
-        let attrs = attr::get(&node.attrs)?;
-        let variants = data
-            .variants
-            .iter()
-            .map(Variant::from_syn)
-            .collect::<Result<_>>()?;
-        Ok(Enum {
-            original: node,
-            data,
-            attrs,
-            variants,
-        })
-    }
-}
-
-impl<'a> Variant<'a> {
-    fn from_syn(node: &'a syn::Variant) -> Result<Self> {
-        let attrs = attr::get(&node.attrs)?;
-        Ok(Variant {
-            original: node,
-            attrs,
-            fields: Field::from_syn_many(&node.fields)?,
+    pub fn from_syn(generics: &'a ContainerGenerics<'a>, input: &'a DeriveInput) -> Result<Self> {
+        let attrs = crate::attr::get(&input.attrs)?;
+        Ok(match &input.data {
+            Data::Struct(data) => Self::Struct(Struct {
+                original: input,
+                data,
+                attrs,
+                generics,
+                fields: Field::from_syn(generics, &data.fields)?,
+            }),
+            Data::Enum(data) => Self::Enum(Enum {
+                original: input,
+                data,
+                attrs,
+                generics,
+                variants: data
+                    .variants
+                    .iter()
+                    .map(|variant| {
+                        Ok(Variant {
+                            original: variant,
+                            attrs: crate::attr::get(&variant.attrs)?,
+                            fields: Field::from_syn(generics, &variant.fields)?,
+                        })
+                    })
+                    .collect::<Result<_>>()?,
+            }),
+            Data::Union(_) => {
+                return Err(syn::Error::new_spanned(input, "unions are not supported"))
+            }
         })
     }
 }
 
 impl<'a> Field<'a> {
-    fn from_syn_many(fields: &'a Fields) -> Result<Vec<Self>> {
-        fields.iter().map(Field::from_syn).collect()
+    fn from_syn(generics: &'a ContainerGenerics<'a>, fields: &'a syn::Fields) -> Result<Vec<Self>> {
+        fields
+            .iter()
+            .map(|field| {
+                Ok(Self {
+                    original: field,
+                    attrs: crate::attr::get(&field.attrs)?,
+                    generics: generics.intersection(&field.ty),
+                })
+            })
+            .collect()
     }
+}
 
-    fn from_syn(node: &'a syn::Field) -> Result<Self> {
-        Ok(Field {
-            original: node,
-            attrs: attr::get(&node.attrs)?,
-        })
+#[derive(Clone, Copy)]
+pub enum Delimiter {
+    Paren,
+    Brace,
+    None,
+}
+
+impl Delimiter {
+    pub fn from_fields(value: &Fields) -> Self {
+        match value {
+            Fields::Named(_) => Self::Brace,
+            Fields::Unnamed(_) => Self::Paren,
+            Fields::Unit => Self::None,
+        }
     }
 }
