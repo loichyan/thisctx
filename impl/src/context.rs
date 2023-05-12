@@ -97,7 +97,7 @@ impl<'a> ContextInfo<'a> {
                 attrs = &st.attrs;
                 contexts = Self::new(
                     (st.original, None),
-                    &st.generics,
+                    st.generics,
                     &st.attrs,
                     (&st.data.fields, &st.fields),
                     ContextOpts::default().inherit_from(&st.attrs),
@@ -114,7 +114,7 @@ impl<'a> ContextInfo<'a> {
                     .filter_map(|va| {
                         Self::new(
                             (en.original, Some(&va.original.ident)),
-                            &en.generics,
+                            en.generics,
                             &va.attrs,
                             (&va.original.fields, &va.fields),
                             ContextOpts::default()

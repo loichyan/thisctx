@@ -206,7 +206,7 @@ impl<'a, 'b> Crawler<'a, 'b> {
             }
             Type::Slice(s) => self.crawl(&s.elem),
             Type::TraitObject(t) => t.bounds.iter().for_each(|b| self.crawl_bound(b)),
-            Type::Tuple(t) => t.elems.iter().for_each(|ty| self.crawl(&ty)),
+            Type::Tuple(t) => t.elems.iter().for_each(|ty| self.crawl(ty)),
             _ => {}
         }
     }
@@ -234,9 +234,8 @@ impl<'a, 'b> Crawler<'a, 'b> {
     }
 
     fn crawl_expr(&mut self, expr: &Expr) {
-        match expr {
-            Expr::Path(p) => self.crawl_path(p.qself.as_ref(), &p.path),
-            _ => {}
+        if let Expr::Path(p) = expr {
+            self.crawl_path(p.qself.as_ref(), &p.path)
         }
     }
 
