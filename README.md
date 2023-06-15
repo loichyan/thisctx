@@ -25,9 +25,11 @@ fn read_file(path: &Path) -> Result<String, Error> {
 You can use the `#[thisctx]` attribute with the following options to customize
 the expanded code:
 
+<!-- TODO: show where an option inherits from -->
+
 | Option    | Type            | Inherited | Container | Variant | Field |
 | --------- | --------------- | --------- | --------- | ------- | ----- |
-| `attr`    | `TokenStream[]` | ✔         | ✔         | ✔       | ✔     |
+| `attr`    | `Meta[]`        | ✔         | ✔         | ✔       | ✔     |
 | `generic` | `bool`          | ✔         | ✔         | ✔       | ✔     |
 | `into`    | `Type[]`        | ✔         | ✔         | ✔       |       |
 | `module`  | `bool \| Ident` |           | ✔         |         |       |
