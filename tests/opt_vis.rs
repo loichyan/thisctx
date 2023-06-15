@@ -7,7 +7,7 @@ mod error {
     #[thisctx(vis(pub(crate)))]
     pub enum Error {
         #[thisctx(vis(pub))]
-        PubVariant(#[thisctx(vis(pub(crate)))] i32),
+        PubVariant(#[thisctx(visibility(pub(crate)))] i32),
         PubCrateVariant(i32),
     }
 }

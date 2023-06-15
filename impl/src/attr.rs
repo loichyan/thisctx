@@ -185,6 +185,7 @@ fn parse_options(input: ParseStream, opts: &mut Attrs) -> Result<()> {
                 unit    = no_unit    use parse_bool(true),
 
                 vis     = vis        use parse_any(),
+                vis     = visibility use parse_any(),
             }
         }
 
