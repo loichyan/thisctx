@@ -49,36 +49,34 @@ struct ContextOpts<'a> {
 
 impl<'a> ContextOpts<'a> {
     fn inherit_from(mut self, attrs: &'a Attrs) -> Self {
-        fn same<T>(t: T) -> T {
-            t
-        }
-
-        fn copied<T: Copy>(t: &T) -> T {
-            *t
-        }
-
         macro_rules! update_opt {
             () => {};
-            ($opt:ident =use $map:path, $($rest:tt)*) => {
+            (+ $opt:ident, $($rest:tt)*) => {
+                self.$opt.extend(attrs.$opt.iter());
+                update_opt!($($rest)*);
+            };
+            (= $opt:ident, $($rest:tt)*) => {
                 if self.$opt.is_none() {
-                    self.$opt = attrs.$opt.as_ref().map($map);
+                    self.$opt = attrs.$opt.as_ref();
                 }
                 update_opt!($($rest)*);
             };
-            ($opt:ident +use $map:path, $($rest:tt)*) => {
-                self.$opt.extend(attrs.$opt.iter().map($map));
+            (=* $opt:ident, $($rest:tt)*) => {
+                if self.$opt.is_none() {
+                    self.$opt = attrs.$opt;
+                }
                 update_opt!($($rest)*);
             };
         }
 
         update_opt! {
-            attr    +use same,
-            generic =use copied,
-            into    +use same,
-            skip    =use copied,
-            suffix  =use same,
-            unit    =use copied,
-            vis     =use same,
+            + attr,
+            + into,
+            = suffix,
+            = vis,
+            =* generic,
+            =* skip,
+            =* unit,
         }
 
         self
