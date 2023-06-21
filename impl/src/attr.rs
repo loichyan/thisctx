@@ -1,9 +1,9 @@
+use plap::{Arg, ArgAction, Args, DefaultFormatter, NamedArg, Parser, ParserContext};
 use proc_macro2::{Span, TokenStream};
 use syn::{
-    parenthesized,
     parse::{Parse, ParseStream},
     spanned::Spanned,
-    token, Attribute, Error, Ident, LitBool, LitStr, Meta, Result, Token, Type, Visibility,
+    Attribute, Ident, Meta, Result, Token, Type, Visibility,
 };
 
 #[derive(Default)]
@@ -12,17 +12,19 @@ pub struct Attrs {
     pub error: Option<AttrError>,
     pub source: Option<AttrSource>,
     // Where options put in
-    pub thisctx: Option<AttrThisctx>,
-    // Repeatable options
+    pub thisctx: Opts,
+}
+
+#[derive(Default)]
+pub struct Opts {
+    // All options
     pub attr: Vec<Meta>,
     pub into: Vec<Type>,
-    // Normal options
     pub vis: Option<Visibility>,
-    // Flag options
     pub generic: Option<bool>,
-    pub module: Option<FlagOrIdent>,
+    pub module: Option<FlagOr<Ident>>,
     pub skip: Option<bool>,
-    pub suffix: Option<FlagOrIdent>,
+    pub suffix: Option<FlagOr<Ident>>,
     pub unit: Option<bool>,
 }
 
@@ -38,300 +40,259 @@ pub struct AttrSource;
 #[derive(Clone, Copy)]
 pub struct AttrThisctx;
 
-trait NamedValue: Sized {
-    fn parse(input: ParseStream) -> Result<Self>;
+pub struct OptsParser {
+    context: ParserContext,
+    // Attribute options
+    attr: Arg<Meta>,
+    cfg: Arg<Meta>,
+    cfg_attr: Arg<Meta>,
+    derive: Arg<Meta>,
+    doc: Arg<Meta>,
+    // Visibility options
+    pub_: Arg<Visibility>,
+    vis: Arg<Visibility>,
+    visibility: Arg<Visibility>,
+    // Normal options
+    into: Arg<Type>,
+    generic: Arg<bool>,
+    module: Arg<FlagOr<Ident>>,
+    skip: Arg<bool>,
+    suffix: Arg<FlagOr<Ident>>,
+    unit: Arg<bool>,
+    // Negative flag options
+    no_generic: Arg<bool>,
+    no_module: Arg<bool>,
+    no_skip: Arg<bool>,
+    no_suffix: Arg<bool>,
+    no_unit: Arg<bool>,
+}
 
-    /// Returns an optional default value of this option.
-    fn fallback() -> Option<Self> {
-        None
+pub enum FlagOr<T> {
+    Flag(bool),
+    Or(T),
+}
+
+impl<T> FlagOr<T> {
+    fn parse_named(input: ParseStream) -> Result<Self>
+    where
+        T: Parse,
+    {
+        input.parse::<Ident>()?;
+        if input.peek(Token![,]) || input.is_empty() {
+            Ok(Self::Flag(true))
+        } else {
+            let (_, value) = NamedArg::parse_value(input)?;
+            Ok(Self::Or(value))
+        }
     }
 }
 
-impl<T: Parse> NamedValue for T {
-    fn parse(input: ParseStream) -> Result<Self> {
-        input.parse()
+impl Args for Opts {
+    type Parser = OptsParser;
+}
+
+impl Parser for OptsParser {
+    type Output = Opts;
+
+    fn with_node(node: Span) -> Self {
+        let mut context = ParserContext::builder()
+            .node(node)
+            .formatter(DefaultFormatter::builder().namespace("thisctx").build());
+        OptsParser {
+            attr: context.arg("attr").action(ArgAction::Append),
+            cfg: context.arg("cfg").action(ArgAction::Append),
+            cfg_attr: context.arg("cfg_attr").action(ArgAction::Append),
+            derive: context.arg("derive").action(ArgAction::Append),
+            doc: context.arg("doc").action(ArgAction::Append),
+            pub_: context
+                .arg("pub")
+                .action(ArgAction::Set)
+                .group("pub|vis|visibility"),
+            vis: context
+                .arg("vis")
+                .action(ArgAction::Set)
+                .group("pub|vis|visibility"),
+            visibility: context
+                .arg("visibility")
+                .action(ArgAction::Set)
+                .group("pub|vis|visibility"),
+            into: context.arg("into").action(ArgAction::Append),
+            generic: context.arg("generic").action(ArgAction::Set),
+            module: context.arg("module").action(ArgAction::Set),
+            skip: context.arg("skip").action(ArgAction::Set),
+            suffix: context.arg("suffix").action(ArgAction::Set),
+            unit: context.arg("unit").action(ArgAction::Set),
+            no_generic: context
+                .arg("no_generic")
+                .action(ArgAction::Set)
+                .conflicts_with("generic"),
+            no_module: context
+                .arg("no_module")
+                .action(ArgAction::Set)
+                .conflicts_with("module"),
+            no_skip: context
+                .arg("no_skip")
+                .action(ArgAction::Set)
+                .conflicts_with("skip"),
+            no_suffix: context
+                .arg("no_suffix")
+                .action(ArgAction::Set)
+                .conflicts_with("suffix"),
+            no_unit: context
+                .arg("no_unit")
+                .action(ArgAction::Set)
+                .conflicts_with("unit"),
+            context: context.build(),
+        }
     }
-}
 
-struct Named<V> {
-    pub name: Ident,
-    pub value: V,
-}
-
-impl<T> Named<T> {
-    fn span(&self) -> Span {
-        self.name.span()
+    fn context(&self) -> &ParserContext {
+        &self.context
     }
-}
 
-impl<V: NamedValue> Parse for Named<V> {
-    fn parse(input: ParseStream) -> Result<Self> {
-        Ok(Self {
-            name: input.parse()?,
-            value: parse_value(input)?,
+    fn parse_once(&mut self, input: ParseStream) -> Result<bool> {
+        let span = input.span();
+        macro_rules! parse_opts {
+            ($($name:ident as $parser:tt,)*) => {
+                $(syn::custom_keyword!($name);)*
+                if false {}
+                $(else if input.peek($name) {
+                    self.$name.add_value(span, parse_opts!(@parser $parser)(input)?);
+                })* else {
+                    return Ok(false);
+                }
+            };
+            (@parser named) => {
+                plap::ParseStreamExt::parse_named_arg
+            };
+            (@parser flag) => {
+                plap::ParseStreamExt::parse_flag_arg
+            };
+            (@parser flag_or_named) => {
+                FlagOr::parse_named
+            };
+            (@parser _) => {
+                syn::parse::Parse::parse
+            };
+        }
+        if input.peek(Token![pub]) {
+            self.pub_.add_value(span, input.parse()?);
+        } else {
+            parse_opts!(
+                attr as named,
+                cfg as _,
+                cfg_attr as _,
+                derive as _,
+                doc as _,
+                vis as named,
+                visibility as named,
+                into as named,
+                generic as flag,
+                module as flag_or_named,
+                skip as flag,
+                suffix as flag_or_named,
+                unit as flag,
+                no_generic as flag,
+                no_module as flag,
+                no_skip as flag,
+                no_suffix as flag,
+                no_unit as flag,
+            );
+        }
+        Ok(true)
+    }
+
+    fn finish(self) -> Result<Self::Output> {
+        self.context.finish()?;
+        Ok(Opts {
+            attr: self
+                .attr
+                .into_values()
+                .chain(self.cfg.into_values())
+                .chain(self.cfg_attr.into_values())
+                .chain(self.derive.into_values())
+                .chain(self.doc.into_values())
+                .collect(),
+            into: self.into.into_values().collect(),
+            vis: self
+                .pub_
+                .into_values()
+                .next()
+                .or_else(|| self.vis.into_option())
+                .or_else(|| self.visibility.into_option()),
+            generic: arg_flag(self.generic, self.no_generic),
+            module: arg_flag_or(self.module, self.no_module),
+            skip: arg_flag(self.skip, self.no_skip),
+            suffix: arg_flag_or(self.suffix, self.no_suffix),
+            unit: arg_flag(self.unit, self.no_unit),
         })
     }
 }
 
-pub enum FlagOrIdent {
-    Flag(bool),
-    Ident(Ident),
-}
-
-impl NamedValue for FlagOrIdent {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let lookahead = input.lookahead1();
-        if lookahead.peek(LitBool) {
-            input.parse::<LitBool>().map(|t| t.value).map(Self::Flag)
-        } else if lookahead.peek(Ident) {
-            input.parse().map(Self::Ident)
-        } else {
-            Err(lookahead.error())
-        }
-    }
-
-    fn fallback() -> Option<Self> {
-        Some(Self::Flag(true))
-    }
-}
-
-#[derive(Clone, Copy)]
-struct Flag(bool);
-
-impl std::ops::Not for Flag {
-    type Output = Self;
-
-    fn not(self) -> Self::Output {
-        Self(!self.0)
-    }
-}
-
-impl From<Flag> for bool {
-    fn from(val: Flag) -> Self {
-        val.0
-    }
-}
-
-impl NamedValue for Flag {
-    fn parse(input: ParseStream) -> Result<Self> {
-        input.parse::<LitBool>().map(|t| t.value).map(Self)
-    }
-
-    fn fallback() -> Option<Self> {
-        Some(Self(true))
-    }
-}
-
-impl From<Flag> for FlagOrIdent {
-    fn from(val: Flag) -> Self {
-        FlagOrIdent::Flag(val.0)
-    }
-}
-
-/// Parses the value of an option or attribute.
-///
-/// Supports two syntaxes:
-///
-/// 1. Quoted literal: `= "..."`
-/// 2. Surrounded tokens: `(...)`
-fn parse_value<T: NamedValue>(input: ParseStream) -> Result<T> {
-    let lookahead = input.lookahead1();
-    if lookahead.peek(Token![=]) {
-        input.parse::<Token![=]>()?;
-        input.parse::<LitStr>()?.parse_with(T::parse)
-    } else if lookahead.peek(token::Paren) {
-        let content;
-        parenthesized!(content in input);
-        T::parse(&content)
-    } else if let Some(t) = T::fallback() {
-        Ok(t)
+fn arg_flag_or<T>(y: Arg<FlagOr<T>>, n: Arg<bool>) -> Option<FlagOr<T>> {
+    if let Some(value) = y.into_option() {
+        Some(value)
+    } else if !n.is_empty() {
+        Some(FlagOr::Flag(false))
     } else {
-        Err(lookahead.error())
+        None
     }
 }
 
-macro_rules! Many {
-    (@type $ty:ty) => { Vec<$ty> };
-    (@update $self:ident, $node:ident, $field:ident, $val:ident) => {
-        $self.$field.push($val);
-    };
-    ($($tt:tt)*) => {};
-}
-
-macro_rules! Unique {
-    (@type $ty:ty) => { Option<$ty> };
-    (@update $self:ident, $node:ident, $field:ident, $val:ident) => {
-        if $self.$field.is_some() {
-            return Err(syn::Error::new(
-                $val.span(),
-                concat!("option `thisctx.", stringify!($field), "` is duplicated"),
-            ));
-        }
-        $self.$field = Some($val);
-    };
-    ($($tt:tt)*) => {};
-}
-
-macro_rules! conflicts_with {
-    (@before:update $self:ident, $node:ident, $field:ident, $val:ident $(,$conflicts:ident)*) => {
-        if false $(|| $self.$conflicts.is_some())* {
-            return Err(syn::Error::new(
-                $val.span(),
-                concat!(
-                    "option `thisctx.", stringify!($field), "` conflicts with",
-                    $(" `thisctx.", stringify!($conflicts), "`",)*
-                ),
-            ));
-        }
-    };
-    ($($tt:tt)*) => {};
-}
-
-macro_rules! used_in {
-    (@parse $self:ident, $node:ident, $input:ident, $field:ident $(,$ty:ident)*) => {
-        if [$(NodeType::$ty)*].find(&node) {
-            return Err(syn::Error::new(
-                $input.span(),
-                concat!(
-                    "option `thisctx.", stringify!($field), "` can only be used in",
-                    $(" `", stringify!($ty), "`",)*
-                ),
-            ));
-        }
-    };
-    ($($tt:tt)*) => {};
-}
-
-macro_rules! define_opts {
-    ($(#[$attr:meta])* $vis:vis struct $name:ident {$(
-        $(@$f_hook:path[$($args:tt)*])*
-        $(#[$f_attr:meta])*
-        $f_vis:vis $f_name:ident: $wrapper:path[$f_ty:ty],
-    )*}) => {
-        $(#[$attr])* $vis struct $name {
-            pub pub_: Unique![@type Visibility],
-            $($(#[$f_attr])* $f_vis $f_name: $wrapper![@type $f_ty],)*
-        }
-
-        impl $name {
-            fn parse(&mut self, _: NodeType, input: syn::parse::ParseStream) -> syn::Result<()> {
-                mod __kw {$(syn::custom_keyword!($f_name);)*}
-
-                loop {
-                    if input.is_empty() { break; }
-                    let lookahead = input.lookahead1();
-
-                    if false { unreachable!(); }
-                    else if lookahead.peek(syn::token::Pub) {
-                        let val = input.parse::<syn::Visibility>()?;
-                        conflicts_with!(self, node, pub, val, vis, visibility);
-                        Unique!(@update self, node, pub_, val);
-                    }
-                    $(else if lookahead.peek(__kw::$f_name) {
-                        let val = input.parse::<$f_ty>()?;
-                        $($f_hook!(@before:update self, node, $f_name, val, $($args)*);)*
-                        $wrapper!(@update self, node, $f_name, val);
-                    })*
-                    else { return Err(lookahead.error()); }
-
-                    if input.is_empty() { break; }
-                    input.parse::<syn::token::Comma>()?;
-                }
-
-                Ok(())
-            }
-        }
-    };
-}
-
-define_opts! {
-    #[derive(Default)]
-    struct Opts {
-        pub attr:     Many[Named<Meta>],
-        pub into:     Many[Named<Type>],
-        pub cfg:      Many[Meta],
-        pub cfg_attr: Many[Meta],
-        pub derive:   Many[Meta],
-        pub doc:      Many[Meta],
-
-        @conflicts_with[visibility]
-        pub vis:        Unique[Named<Visibility>],
-        @conflicts_with[vis]
-        pub visibility: Unique[Named<Visibility>],
-        @conflicts_with[no_generic]
-        pub generic:    Unique[Named<Flag>],
-        @conflicts_with[no_module]
-        pub module:     Unique[Named<FlagOrIdent>],
-        @conflicts_with[no_skip]
-        pub skip:       Unique[Named<Flag>],
-        @conflicts_with[no_suffix]
-        pub suffix:     Unique[Named<FlagOrIdent>],
-        @conflicts_with[no_unit]
-        pub unit:       Unique[Named<Flag>],
-
-        @conflicts_with[generic]
-        pub no_generic: Unique[Named<Flag>],
-        @conflicts_with[module]
-        pub no_module:  Unique[Named<Flag>],
-        @conflicts_with[skip]
-        pub no_skip:    Unique[Named<Flag>],
-        @conflicts_with[suffix]
-        pub no_suffix:  Unique[Named<Flag>],
-        @conflicts_with[unit]
-        pub no_unit:    Unique[Named<Flag>],
+fn arg_flag(y: Arg<bool>, n: Arg<bool>) -> Option<bool> {
+    if !y.is_empty() {
+        Some(true)
+    } else if !n.is_empty() {
+        Some(false)
+    } else {
+        None
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum NodeType {
-    Container,
-    Variant,
-    Field,
+pub enum Node<'a> {
+    Container(&'a syn::DeriveInput),
+    Variant(&'a syn::Variant),
+    Field(&'a syn::Field),
 }
 
-pub fn get(node: NodeType, input: &[Attribute]) -> Result<Attrs> {
+pub fn get(node: Node, input: &[Attribute]) -> Result<Attrs> {
     let mut attr;
-    let mut path;
+    let mut span;
     let mut attrs = Attrs::default();
-    let mut opts = Opts::default();
+    let mut opts = Opts::parser(match node {
+        Node::Container(c) => c.ident.span(),
+        Node::Variant(v) => v.ident.span(),
+        Node::Field(f) => f.ident.as_ref().map_or_else(|| f.ty.span(), Ident::span),
+    });
 
     macro_rules! no_duplicate {
         ($name:ident) => {
             if attrs.$name.is_some() {
-                return Err(Error::new(
-                    path.span(),
-                    concat!("attribute `", stringify!($name), "` is duplicated"),
+                return Err(syn::Error::new(
+                    span,
+                    concat!("`", stringify!($name), "` is duplicated"),
                 ));
             }
         };
     }
 
-    macro_rules! update_attrs {
-        () => {};
-        ($attr:ident + $opt:ident, $($rest:tt)*) => {
-            attrs.$attr.extend(opts.$opt.into_iter().map(|t| t.value));
-            update_attrs!($($rest)*);
-        };
-        ($attr:ident +# $opt:ident, $($rest:tt)*) => {
-            attrs.$attr.extend(opts.$opt.into_iter());
-            update_attrs!($($rest)*);
-        };
-        ($attr:ident = $opt:ident, $($rest:tt)*) => {
-            attrs.$attr = opts.$opt.map(|t| t.value.into());
-            update_attrs!($($rest)*);
-        };
-        ($attr:ident =! $opt:ident, $($rest:tt)*) => {
-            attrs.$attr = opts.$opt.map(|t| (!t.value).into());
-            update_attrs!($($rest)*);
-        };
+    macro_rules! unexpected_in {
+        ($node:literal => $($name:ident),* $(,)?) => {{$(
+            for &span in opts.$name.spans() {
+                opts.context().error(syn::Error::new(
+                    span,
+                    concat!("`thisctx.", stringify!($name), "` is not allowed in ", $node),
+                ));
+            }
+        )*}};
     }
 
     for t in input {
         attr = t;
-        if let Some(t) = attr.path().get_ident() {
-            path = t;
+        if let Some(path) = attr.path().get_ident() {
+            span = path.span();
             if path == "thisctx" {
-                attr.parse_args_with(|input: ParseStream| opts.parse(node, input))?;
+                attr.parse_args_with(|input: ParseStream| opts.parse(input))?;
             } else if path == "source" {
                 no_duplicate!(source);
                 attr.meta.require_path_only()?;
@@ -340,7 +301,6 @@ pub fn get(node: NodeType, input: &[Attribute]) -> Result<Attrs> {
                 no_duplicate!(error);
                 attrs.error = Some(attr.parse_args_with(|input: ParseStream| {
                     syn::custom_keyword!(transparent);
-
                     if input.parse::<Option<transparent>>()?.is_some() {
                         Ok(AttrError::Transparent)
                     } else {
@@ -352,28 +312,14 @@ pub fn get(node: NodeType, input: &[Attribute]) -> Result<Attrs> {
         }
     }
 
-    update_attrs! {
-        attr + attr,
-        into + into,
-        attr +# cfg,
-        attr +# cfg_attr,
-        attr +# derive,
-        attr +# doc,
-
-        vis     = vis,
-        vis     = visibility,
-        generic = generic,
-        module  = module,
-        skip    = skip,
-        suffix  = suffix,
-        unit    = unit,
-
-        generic =! no_generic,
-        module  =! no_module,
-        skip    =! no_skip,
-        suffix  =! no_suffix,
-        unit    =! no_unit,
+    match node {
+        Node::Container(_) => unexpected_in!("a container" =>),
+        Node::Variant(_) => unexpected_in!("a variant" => module, no_module),
+        Node::Field(_) => {
+            unexpected_in!("a filed" => into, module, skip, unit, no_module, no_skip, no_unit)
+        }
     }
 
+    attrs.thisctx = opts.finish()?;
     Ok(attrs)
 }

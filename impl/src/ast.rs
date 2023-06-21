@@ -1,5 +1,5 @@
 use crate::{
-    attr::{Attrs, NodeType},
+    attr::{Attrs, Node},
     generics::{ContainerGenerics, GenericInfo},
 };
 use syn::{Data, DataEnum, DataStruct, DeriveInput, Fields, Result};
@@ -40,7 +40,7 @@ pub struct Field<'a> {
 
 impl<'a> Input<'a> {
     pub fn from_syn(generics: &'a ContainerGenerics<'a>, input: &'a DeriveInput) -> Result<Self> {
-        let attrs = crate::attr::get(NodeType::Container, &input.attrs)?;
+        let attrs = crate::attr::get(Node::Container(input), &input.attrs)?;
         Ok(match &input.data {
             Data::Struct(data) => Self::Struct(Struct {
                 original: input,
@@ -60,7 +60,7 @@ impl<'a> Input<'a> {
                     .map(|variant| {
                         Ok(Variant {
                             original: variant,
-                            attrs: crate::attr::get(NodeType::Variant, &variant.attrs)?,
+                            attrs: crate::attr::get(Node::Variant(variant), &variant.attrs)?,
                             fields: Field::from_syn(generics, &variant.fields)?,
                         })
                     })
@@ -80,7 +80,7 @@ impl<'a> Field<'a> {
             .map(|field| {
                 Ok(Self {
                     original: field,
-                    attrs: crate::attr::get(NodeType::Field, &field.attrs)?,
+                    attrs: crate::attr::get(Node::Field(field), &field.attrs)?,
                     generics: generics.intersection(&field.ty),
                 })
             })

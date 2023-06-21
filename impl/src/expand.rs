@@ -272,7 +272,7 @@ impl<'a> ToTokens for QuoteFields<'a> {
                     Visibility::Inherited => self.context.vis,
                     others => others,
                 };
-                Some(f.attrs.vis.as_ref().unwrap_or(vis))
+                Some(f.attrs.thisctx.vis.as_ref().unwrap_or(vis))
             } else {
                 None
             };

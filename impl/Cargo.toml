@@ -15,6 +15,7 @@ documentation = "https://docs.rs/thisctx"
 proc-macro = true
 
 [dependencies]
+plap = { git = "https://github.com/loichyan/plap", rev = "d409630f70bea03197fc45346e6ceabe3ac4c3d0" }
 proc-macro2 = "1.0"
 quote = "1.0"
 syn = "2.0"

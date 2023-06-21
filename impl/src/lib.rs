@@ -2,8 +2,6 @@
 
 #![allow(clippy::type_complexity)]
 
-extern crate proc_macro;
-
 mod ast;
 mod attr;
 mod context;
