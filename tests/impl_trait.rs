@@ -14,13 +14,13 @@ enum Error {
     NoneSource(&'static str),
 }
 
-#[test]
-fn from_context() {
-    assert_eq!(
-        Error::from(NoneSource("Hello, thisctx!")),
-        Error::NoneSource("Hello, thisctx!"),
-    );
-}
+// #[test]
+// fn from_context() {
+//     assert_eq!(
+//         Error::from(NoneSource("Hello, thisctx!")),
+//         Error::NoneSource("Hello, thisctx!"),
+//     );
+// }
 
 #[test]
 fn into_error() {

@@ -277,7 +277,7 @@ impl<'a> Context<'a> {
                 },
             ))
         }
-        let has_source = source_ty.is_some();
+        // let has_source = source_ty.is_some();
         let is_unit = index == 0;
 
         // Generate type of context.
@@ -352,26 +352,27 @@ impl<'a> Context<'a> {
             .chain(self.options.into.iter().map(ToTokens::to_token_stream))
             .map(|error_ty| {
                 let into_error_ty = quote!(#T_INTO_ERROR::<#error_ty>);
-                let impl_from_context = if !has_source {
-                    // Generate `impl From for Error` if no `source` is specified.
-                    Some(quote!(
-                        #[allow(non_camel_case_types)]
-                        impl<#impl_generics>
-                        #T_FROM<#context_ty>
-                        for #error_ty
-                        where #impl_bounds
-                            #context_ty: #into_error_ty,
-                            <#context_ty as #into_error_ty>::Source: #T_DEFAULT,
-                        {
-                            #[inline]
-                            fn from(context: #context_ty) -> Self {
-                                #T_INTO_ERROR::into_error(context, #T_DEFAULT::default())
-                            }
-                        }
-                    ))
-                } else {
-                    None
-                };
+                // TODO: add an option to enable this
+                // let impl_from_context = if !has_source {
+                //     // Generate `impl From for Error` if no `source` is specified.
+                //     Some(quote!(
+                //         #[allow(non_camel_case_types)]
+                //         impl<#impl_generics>
+                //         #T_FROM<#context_ty>
+                //         for #error_ty
+                //         where #impl_bounds
+                //             #context_ty: #into_error_ty,
+                //             <#context_ty as #into_error_ty>::Source: #T_DEFAULT,
+                //         {
+                //             #[inline]
+                //             fn from(context: #context_ty) -> Self {
+                //                 #T_INTO_ERROR::into_error(context, #T_DEFAULT::default())
+                //             }
+                //         }
+                //     ))
+                // } else {
+                //     None
+                // };
                 // Generate `impl IntoError for Context`.
                 quote!(
                     #[allow(non_camel_case_types)]
@@ -386,7 +387,7 @@ impl<'a> Context<'a> {
                         }
                     }
 
-                    #impl_from_context
+                    // #impl_from_context
                 )
             });
         quote!(
