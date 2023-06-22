@@ -25,16 +25,18 @@ fn read_file(path: &Path) -> Result<String, Error> {
 You can use the `#[thisctx]` attribute with the following options to customize
 the expanded code:
 
-| Option       | Type            | Inherited | Container | Variant | Field |
-| ------------ | --------------- | --------- | --------- | ------- | ----- |
-| `attr`       | `TokenStream[]` | ✔         | ✔         | ✔       | ✔     |
-| `generic`    | `bool`          | ✔         | ✔         | ✔       | ✔     |
-| `into`       | `Type[]`        | ✔         | ✔         | ✔       |       |
-| `module`     | `bool \| Ident` |           | ✔         |         |       |
-| `skip`       | `Ident`         | ✔         | ✔         | ✔       |       |
-| `suffix`     | `bool \| Ident` | ✔         | ✔         | ✔       |       |
-| `unit`       | `bool`          | ✔         | ✔         | ✔       |       |
-| `visibility` | `Visibility`    | ✔         | ✔         | ✔       | ✔     |
+<!-- TODO: show where an option inherits from -->
+
+| Option    | Type            | Inherited | Container | Variant | Field |
+| --------- | --------------- | --------- | --------- | ------- | ----- |
+| `attr`    | `Meta[]`        | ✔         | ✔         | ✔       | ✔     |
+| `generic` | `bool`          | ✔         | ✔         | ✔       | ✔     |
+| `into`    | `Type[]`        | ✔         | ✔         | ✔       |       |
+| `module`  | `bool \| Ident` |           | ✔         |         |       |
+| `skip`    | `Ident`         | ✔         | ✔         | ✔       |       |
+| `suffix`  | `bool \| Ident` | ✔         | ✔         | ✔       |       |
+| `unit`    | `bool`          | ✔         | ✔         | ✔       |       |
+| `vis`     | `Visibility`    | ✔         | ✔         | ✔       | ✔     |
 
 The `#[source]` and `#[error]` attributes defined in `thiserror` are also
 checked to determine the source error type.
@@ -43,9 +45,9 @@ checked to determine the source error type.
 
 `#[thisctx]` supports two syntaxes for passing arguments to an option:
 
-- Put tokens directly in parentheses, e.g. `#[thisctx(visibility(pub))]`
-- Use a string literal, e.g. `#[thisctx(visibility = "pub")]`, which is useful
-  in older versions of `rustc` that don't support arbitrary tokens in non-macro
+- Put tokens directly in parentheses, e.g. `#[thisctx(vis(pub))]`
+- Use a string literal, e.g. `#[thisctx(vis = "pub")]`, which is useful in older
+  versions of `rustc` that don't support arbitrary tokens in non-macro
   attributes.
 
 An option of type `T[]` can occur multiple times in the same node, while other
@@ -221,7 +223,7 @@ enum RemoteError {
 // From<T> is required by #[thisctx(into)]
 impl From<MyError> for RemoteError {
     fn from(e: MyError) -> Self {
-        Self::Custom(e.0)
+        RemoteError::Custom(e.0)
     }
 }
 
@@ -328,7 +330,7 @@ struct IoError();
 struct ParseIntError;
 ```
 
-### `thisctx.visibility`
+### `thisctx.vis`
 
 This option is used to change the visibility of the generated types and fields
 and can be written in shorthand as `#[pub(...)]`.
@@ -351,20 +353,12 @@ pub(crate) struct ParseIntError;
 
 ## 📝 Todo
 
-- [x] ~~Switch to Rust 2021.~~
-- [x] MSRV v1.33
-- [x] Use derive macro instead.
-- [x] Add attributes to context types.
-- [x] Support transparent errors.
-- [x] Support generics.
-- [x] Simplify the derive implementation.
-- [x] More documentation.
+- [ ] Simplify the derive implementation.
 - [ ] More tests.
 
 ## 🚩 Minimal supported Rust version
 
-All tests under `tests/*` passed with `rustc v1.33`, earlier versions may not
-compile.
+All tests passed with `rustc v1.56`, earlier versions may not compile.
 
 ## ⚖️ License
 

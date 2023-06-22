@@ -12,6 +12,6 @@ pub enum Error {
 fn requires_copied<T: Copy>(_: T) {}
 
 #[test]
-fn attr_attr() {
+fn opt_attr() {
     requires_copied(ExtendAttributes("What's going on?"));
 }

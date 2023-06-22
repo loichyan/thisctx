@@ -1,5 +1,5 @@
 error: duplicate #[thisctx(skip)] option
- --> compile_tests/duplicated_attr.rs:6:15
+ --> tests/compile_fail/duplicated_attr.rs:6:15
   |
 6 |     #[thisctx(skip)]
   |               ^^^^

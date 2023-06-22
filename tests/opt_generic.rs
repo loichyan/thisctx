@@ -11,6 +11,6 @@ enum Error {
 }
 
 #[test]
-fn attr_generic() {
+fn opt_generic() {
     let _ = NoGeneratedGenericOnField::<&str, &str>("What's", "going".to_owned(), "on");
 }

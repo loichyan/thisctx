@@ -15,7 +15,7 @@ pub(crate) enum SnakeCase {
 }
 
 #[test]
-fn attr_module() {
+fn opt_module() {
     let _: Error = context::Variant1("anyhow").build();
     let _: Error = context::Variant2(0).build();
     let _: SnakeCase = snake_case::Variant1("anyhow").build();

@@ -9,7 +9,7 @@ enum Error {
 }
 
 #[test]
-fn attr_no_unit() {
+fn opt_no_unit() {
     NotUnit().build();
     Unit.build();
 }
