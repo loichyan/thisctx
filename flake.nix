@@ -1,56 +1,44 @@
 {
   inputs = {
-    nixpkgs.url = "nixpkgs";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    ra-flake.url = "github:loichyan/ra-flake";
   };
 
-  outputs = { nixpkgs, flake-utils, fenix, ra-flake, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    { nixpkgs, flake-utils, ... }@inputs:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [
-            fenix.overlays.default
-            ra-flake.overlays.default
-          ];
+          overlays = [ inputs.fenix.overlays.default ];
         };
-        rust = with pkgs.fenix;
-          with toolchainOf
-            {
-              channel = "1.56";
-              sha256 = "sha256-MJyH6FPVI7diJql9d+pifu5aoqejvvXyJ+6WSJDWaIA=";
-            };
-          combine [
+        inherit (pkgs) fenix lib;
+
+        # Rust toolchain
+        rustToolchainFile = lib.importTOML ./rust-toolchain.toml;
+        rustChannel = {
+          channel = rustToolchainFile.toolchain.channel;
+          sha256 = "sha256-MJyH6FPVI7diJql9d+pifu5aoqejvvXyJ+6WSJDWaIA=";
+        };
+        rustToolchain = fenix.toolchainOf rustChannel;
+
+        # For development
+        rust-dev = fenix.combine (
+          with rustToolchain;
+          [
             defaultToolchain
             rust-src
-          ];
-        rustPlatform = pkgs.makeRustPlatform {
-          cargo = rust;
-          rustc = rust;
-        };
-        # Old version of rust-analyzer is required.
-        rust-analyzer =
-          pkgs.ra-flake.make {
-            cargo = rust;
-            rustc = rust;
-            version.rust = "1.56";
-            sha256 = "sha256-vh7z8jupVxXPOko3sWUsOB7eji/7lKfwJ/CE3iw97Sw=";
-          };
+          ]
+        );
+
       in
-      with pkgs; {
-        devShells = {
-          default = mkShell {
-            nativeBuildInputs = [
-              rust
-              rust-analyzer
-            ];
-          };
-        };
+      {
+        devShells.default = with pkgs; mkShell { packages = [ rust-dev ]; };
       }
     );
 }
