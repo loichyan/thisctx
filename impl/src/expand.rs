@@ -217,7 +217,7 @@ impl<'a> Context<'a> {
     }
 
     fn impl_all(&self) -> TokenStream {
-        // Analyze feilds of contexts.
+        // Analyze fields of contexts.
         let context_vis = self.options.visibility.unwrap_or(&self.input.vis);
         let mut source_field_index = self.find_source_field();
         let mut source_ty = None;
@@ -299,7 +299,7 @@ impl<'a> Context<'a> {
             let attr = &self.options.attr;
             let generics1 = quote_analyzed_generics(&generics_analyzer, true, true);
             let generics2 = quote_generated_generics(&fields_analyzer, true);
-            let fields = quote_context_fileds(&fields_analyzer);
+            let fields = quote_context_fields(&fields_analyzer);
             let body = if is_unit && self.options.unit != Some(false) {
                 Surround::None
             } else {
@@ -323,7 +323,7 @@ impl<'a> Context<'a> {
         let constructor_expr = {
             let variant = &self.variant;
             let colon2 = variant.map(|_| <Token![::]>::default());
-            let fields = quote_consturctor_fileds(&fields_analyzer);
+            let fields = quote_constructor_fields(&fields_analyzer);
             let body = self.surround.quote(fields, false);
             quote!(#constructor_ty #colon2 #variant #body)
         };
@@ -474,7 +474,7 @@ fn quote_impl_bounds(generics: &GenericsAnalyzer, fields: &FieldsAnalyzer) -> To
     quote!(#(#all,)*)
 }
 
-fn quote_context_fileds(analyzer: &FieldsAnalyzer) -> TokenStream {
+fn quote_context_fields(analyzer: &FieldsAnalyzer) -> TokenStream {
     let fields = analyzer.iter().flat_map(|(name, info)| {
         if let FieldType::Source = info.ty {
             return None;
@@ -496,7 +496,7 @@ fn quote_context_fileds(analyzer: &FieldsAnalyzer) -> TokenStream {
     quote!(#(#fields,)*)
 }
 
-fn quote_consturctor_fileds(analyzer: &FieldsAnalyzer) -> TokenStream {
+fn quote_constructor_fields(analyzer: &FieldsAnalyzer) -> TokenStream {
     let fields = analyzer.iter().map(|(name, info)| {
         let field = if let FieldName::Named(name) = name {
             Some(quote!(#name:))
