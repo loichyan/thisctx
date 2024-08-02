@@ -1,9 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::ToTokens;
+use syn::parse::{Parse, ParseStream};
 use syn::{
-    parenthesized,
-    parse::{Parse, ParseStream},
-    token, Attribute, Error, Ident, LitBool, LitStr, Result, Token, Type, Visibility,
+    parenthesized, token, Attribute, Error, Ident, LitBool, LitStr, Result, Token, Type, Visibility,
 };
 
 mod kw {

@@ -1,11 +1,10 @@
-use crate::{
-    ast::{Enum, Field, Input, Struct, Variant},
-    attr::{Attrs, FlagOrIdent},
-    generics::{GenericName, GenericsAnalyzer, TypeParamBound},
-};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use syn::{DeriveInput, Fields, Ident, Index, Result, Token, Type, Visibility};
+
+use crate::ast::{Enum, Field, Input, Struct, Variant};
+use crate::attr::{Attrs, FlagOrIdent};
+use crate::generics::{GenericName, GenericsAnalyzer, TypeParamBound};
 
 macro_rules! new_type_quote {
     ($($name:ident($($tt:tt)*);)*) => {$(

@@ -1,4 +1,6 @@
-use std::collections::{btree_map::Entry as MapEntry, BTreeMap as Map};
+use std::collections::btree_map::Entry as MapEntry;
+use std::collections::BTreeMap as Map;
+
 use syn::{
     Expr, GenericArgument, GenericParam, Generics, Ident, Lifetime, PathArguments, TraitBound,
     Type, WherePredicate,

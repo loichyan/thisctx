@@ -23,8 +23,8 @@
 //!
 //! # ⚙️ Attributes
 //!
-//! You can use the `#[thisctx]` attribute with the following options to customize
-//! the expanded code:
+//! You can use the `#[thisctx]` attribute with the following options to
+//! customize the expanded code:
 //!
 //! | Option       | Type            | Inherited | Container | Variant | Field |
 //! | ------------ | --------------- | --------- | --------- | ------- | ----- |
@@ -45,25 +45,26 @@
 //! `#[thisctx]` supports two syntaxes for passing arguments to an option:
 //!
 //! - Put tokens directly in parentheses, e.g. `#[thisctx(visibility(pub))]`
-//! - Use a string literal, e.g. `#[thisctx(visibility = "pub")]`, which is useful
-//!   in older versions of `rustc` that don't support arbitrary tokens in non-macro
-//!   attributes.
+//! - Use a string literal, e.g. `#[thisctx(visibility = "pub")]`, which is
+//!   useful in older versions of `rustc` that don't support arbitrary tokens in
+//!   non-macro attributes.
 //!
-//! An option of type `T[]` can occur multiple times in the same node, while other
-//! types result in an error.
+//! An option of type `T[]` can occur multiple times in the same node, while
+//! other types result in an error.
 //!
 //! ## Boolean options
 //!
 //! You can omit the `true` value in boolean options, e.g. `#[thisctx(skip)]` is
 //! equal to `#[thisctx(skip(true))]`.
 //!
-//! Negative boolean options starting with `no_` can also be used as a shortcut to
-//! pass `false`, e.g. `#[thisctx(no_skip)]` is equal to `#[thisctx(skip(false))]`.
+//! Negative boolean options starting with `no_` can also be used as a shortcut
+//! to pass `false`, e.g. `#[thisctx(no_skip)]` is equal to
+//! `#[thisctx(skip(false))]`.
 //!
 //! ## Inherited options
 //!
-//! An inherited option uses the value of its parent node if no value is specified,
-//! for example:
+//! An inherited option uses the value of its parent node if no value is
+//! specified, for example:
 //!
 //! ```
 //! # use thisctx::WithContext;
@@ -108,9 +109,9 @@
 //!
 //! ## `source`
 //!
-//! If a field has the `#[source]` attribute or is named `source`, the type of this
-//! field is assigned to `IntoError::Source` and doesn't appear in the generated
-//! context types.
+//! If a field has the `#[source]` attribute or is named `source`, the type of
+//! this field is assigned to `IntoError::Source` and doesn't appear in the
+//! generated context types.
 //!
 //! ```
 //! # use std::path::PathBuf;
@@ -141,8 +142,9 @@
 //!
 //! ## `error`
 //!
-//! If a variant is transparent (which has `#[error(transparent)]`), the first field
-//! (which should also be the only field) is considered as the source field.
+//! If a variant is transparent (which has `#[error(transparent)]`), the first
+//! field (which should also be the only field) is considered as the source
+//! field.
 //!
 //! ## `thisctx.attr`
 //!
@@ -210,7 +212,8 @@
 //! }
 //! ```
 //!
-//! The generics provide a convenient way to construct context types, for example:
+//! The generics provide a convenient way to construct context types, for
+//! example:
 //!
 //! ```
 //! # use std::path::PathBuf;
@@ -226,7 +229,8 @@
 //!     reason: "anyhow",
 //!     // whereas without generics you have to convert the data to PathBuf manually.
 //!     path: "/some/path".into(),
-//! }.build();
+//! }
+//! .build();
 //! ```
 //!
 //! ## `thisctx.into`
@@ -258,7 +262,8 @@
 //!
 //! ## `thisctx.module`
 //!
-//! This option allows you to put all generated context types into a single module.
+//! This option allows you to put all generated context types into a single
+//! module.
 //!
 //! ```
 //! # use thisctx::WithContext;
@@ -280,13 +285,16 @@
 //! }
 //! ```
 //!
-//! > You can also set this option to `true` to use the snake case of the container
-//! > name as the module name, e.g. `#[thisctx(module)]` on `enum MyError` is equal
+//! > You can also set this option to `true` to use the snake case of the
+//! > container
+//! > name as the module name, e.g. `#[thisctx(module)]` on `enum MyError` is
+//! > equal
 //! > to `#[thisctx(module(my_error))]`.
 //!
 //! ## `thisctx.skip`
 //!
-//! This option is used to skip generating context types for the specified variant.
+//! This option is used to skip generating context types for the specified
+//! variant.
 //!
 //! ```
 //! # use thisctx::WithContext;
@@ -308,8 +316,8 @@
 //!
 //! An option to add a suffix to the names of the generated context types.
 //!
-//! By default, only `struct`s get the builtin suffix `Context` since the generated
-//! types without suffix conflict with the error type.
+//! By default, only `struct`s get the builtin suffix `Context` since the
+//! generated types without suffix conflict with the error type.
 //!
 //! ```
 //! # use thisctx::WithContext;
@@ -336,7 +344,8 @@
 //! In Rust, parentheses are required to construct a tuple struct even if it's
 //! empty. `thisctx` converts an empty struct to a unit struct by default. This
 //! allows you use the struct name to create a new context without having to add
-//! parentheses each time and can be turned off by passing `#[thisctx(no_unit)]`.
+//! parentheses each time and can be turned off by passing
+//! `#[thisctx(no_unit)]`.
 //!
 //! ```rust
 //! # use thisctx::WithContext;
@@ -357,8 +366,8 @@
 //!
 //! ## `thisctx.visibility`
 //!
-//! This option is used to change the visibility of the generated types and fields
-//! and can be written in shorthand as `#[pub(...)]`.
+//! This option is used to change the visibility of the generated types and
+//! fields and can be written in shorthand as `#[pub(...)]`.
 //!
 //! ```rust
 //! # use thisctx::WithContext;
@@ -435,8 +444,8 @@ pub trait WithContext: Sized {
 }
 
 impl<T, Err> WithContext for Result<T, Err> {
-    type Ok = T;
     type Err = Err;
+    type Ok = T;
 
     #[inline]
     fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<T, E>
@@ -449,8 +458,8 @@ impl<T, Err> WithContext for Result<T, Err> {
 }
 
 impl<T> WithContext for Option<T> {
-    type Ok = T;
     type Err = NoneSource;
+    type Ok = T;
 
     #[inline]
     fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<T, E>

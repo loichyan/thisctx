@@ -1,5 +1,6 @@
-use crate::attr::{self, Attrs};
 use syn::{Data, DataEnum, DataStruct, DeriveInput, Error, Fields, Result};
+
+use crate::attr::{self, Attrs};
 
 pub enum Input<'a> {
     Struct(Struct<'a>),
