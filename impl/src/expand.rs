@@ -1,3 +1,5 @@
+#![allow(clippy::ptr_arg)]
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use syn::{DeriveInput, Fields, Ident, Index, Result, Token, Type, Visibility};
@@ -27,7 +29,6 @@ new_type_quote!(
     I_SOURCE_VAR (source);
 
     // Traits
-    T_DEFAULT    (::core::default::Default);
     T_FROM       (::core::convert::From);
     T_INTO       (::core::convert::Into);
     T_INTO_ERROR (::thisctx::IntoError);

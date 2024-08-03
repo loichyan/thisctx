@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use syn::{Data, DataEnum, DataStruct, DeriveInput, Error, Fields, Result};
 
 use crate::attr::{self, Attrs};
