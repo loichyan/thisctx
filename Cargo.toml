@@ -1,5 +1,5 @@
 [workspace]
-members = ["impl"]
+members = ["impl", "impl_next"]
 
 [package]
 name = "thisctx"
@@ -19,6 +19,7 @@ categories = ["rust-patterns"]
 
 [dependencies]
 thisctx_impl = { version = "=0.4.0", path = "impl" }
+thisctx_impl_next = { version = "=0.4.0", path = "impl_next" }
 
 [dev-dependencies]
 thiserror = "1.0"
