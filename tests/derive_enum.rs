@@ -1,4 +1,4 @@
-#[derive(Debug, Eq, PartialEq, thisctx::WithContextNext)]
+#[derive(Debug, Eq, PartialEq, thisctx::WithContext)]
 enum Error {
     NamedWithSource {
         context_1: String,
@@ -24,7 +24,7 @@ enum Error {
 
 #[test]
 fn derive_enum() {
-    use thisctx::IntoErrorNext;
+    use thisctx::IntoError;
     assert_eq!(
         NamedWithSource {
             context_1: "Hello,",

@@ -1,4 +1,4 @@
-#[derive(Debug, thisctx::WithContextNext)]
+#[derive(Debug, thisctx::WithContext)]
 #[allow(clippy::enum_variant_names)]
 enum Error {
     #[thisctx(prefix = "Error")]

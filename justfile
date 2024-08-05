@@ -11,10 +11,13 @@ _default:
     @command {{ _just }} --list
 
 check:
-    $CARGO clippy --all
+    $CARGO clippy --workspace
 
 check-fmt:
     $CARGO fmt --check
 
 fmt:
     $CARGO fmt
+
+test:
+    $CARGO test --workspace

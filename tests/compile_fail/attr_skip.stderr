@@ -1,8 +1,8 @@
 error[E0425]: cannot find value `NotGenerateContext` in this scope
   --> tests/compile_fail/attr_skip.rs:11:13
    |
-1  | #[derive(thisctx::WithContextNext)]
-   |          ------------------------ similarly named unit struct `GenerateContext` defined here
+1  | #[derive(thisctx::WithContext )]
+   |          -------------------- similarly named unit struct `GenerateContext` defined here
 ...
 11 |     let _ = NotGenerateContext;
    |             ^^^^^^^^^^^^^^^^^^

@@ -1,25 +1,21 @@
 [workspace]
-members = ["impl", "impl_next"]
+members = ["impl"]
 
 [package]
 name = "thisctx"
 version = "0.4.0"
-license = "MIT OR Apache-2.0"
 authors = ["Loi Chyan <loichyan@foxmail.com>"]
+license = "MIT OR Apache-2.0"
 edition = "2021"
 rust-version = "1.56"
 
 description = "A handy macro to create error with contexts"
-readme = "README.md"
 repository = "https://github.com/loichyan/thisctx"
-documentation = "https://docs.rs/thisctx"
-
 keywords = ["error", "derive"]
 categories = ["rust-patterns"]
 
 [dependencies]
 thisctx_impl = { version = "=0.4.0", path = "impl" }
-thisctx_impl_next = { version = "=0.4.0", path = "impl_next" }
 
 [dev-dependencies]
 thiserror = "1.0"

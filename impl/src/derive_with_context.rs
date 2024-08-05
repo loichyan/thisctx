@@ -296,7 +296,7 @@ impl<'i> ContextInfo<'i, '_> {
             > #def_body_with_where_clause
 
             #[allow(non_camel_case_types)]
-            impl<#orig_def_params #ty_params #orig_def_const_params> #RT::IntoErrorNext
+            impl<#orig_def_params #ty_params #orig_def_const_params> #RT::IntoError
             for #name<#orig_ty_params #ty_params #orig_ty_const_params>
             where #orig_generic_bounds #generic_bounds {
                 type Target = #target;
@@ -383,17 +383,20 @@ impl<'i> ContextInfo<'i, '_> {
         }
 
         // 2nd-pass: add generics
-        let generic = attrs
-            .generic
-            // inherit #[thisctx(generic)]
-            .or_else(|| parent_attrs.and_then(|a| a.generic));
+        let parent_magic = attrs
+            .magic
+            // inherit #[thisctx(magic)]
+            .or_else(|| parent_attrs.and_then(|a| a.magic));
         for (i, f) in field_infos.iter_mut().enumerate() {
             if f.attrs.is_excluded() {
                 continue;
             }
 
-            // TODO: enable for some types by default
-            if f.attrs.generic.or(generic).unwrap_or(false) {
+            if f.attrs
+                .magic
+                .or(parent_magic)
+                .unwrap_or_else(|| crate::infer::is_in_magic_whitelist(&f.ty))
+            {
                 f.generic = Some(match &f.ident {
                     Some(i) => format_ident!("T_{}", i, span = i.span()),
                     None => format_ident!("T_{}", i),

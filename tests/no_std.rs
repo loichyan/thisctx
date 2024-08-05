@@ -1,6 +1,6 @@
 #![no_std]
 
-#[derive(thisctx::WithContextNext)]
+#[derive(thisctx::WithContext)]
 enum Error {
     Variant1(i32),
     Variant2(usize),

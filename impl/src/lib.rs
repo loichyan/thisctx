@@ -1,21 +1,17 @@
-//! Macro implementation of the [thisctx](https://crates.io/crates/thisctx) crate.
+//! Macro implementation of [thisctx](https://crates.io/crates/thisctx).
 
-#![allow(clippy::type_complexity)]
+#[macro_use]
+mod util;
+mod attrs;
+mod derive_with_context;
+mod infer;
 
-extern crate proc_macro;
-
-mod ast;
-mod attr;
-mod expand;
-mod generics;
-
-use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
 
 #[proc_macro_derive(WithContext, attributes(error, source, thisctx))]
-pub fn derive_with_context(input: TokenStream) -> TokenStream {
+pub fn derive_with_context(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    expand::derive(&input)
-        .unwrap_or_else(|e| e.to_compile_error())
+    derive_with_context::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

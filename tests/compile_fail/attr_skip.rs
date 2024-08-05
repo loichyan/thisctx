@@ -1,4 +1,4 @@
-#[derive(thisctx::WithContextNext)]
+#[derive(thisctx::WithContext )]
 #[thisctx(skip)]
 enum Error {
     #[thisctx(skip = false)]

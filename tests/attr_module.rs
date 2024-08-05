@@ -1,4 +1,4 @@
-#[derive(thisctx::WithContextNext)]
+#[derive(thisctx::WithContext)]
 #[thisctx(module = "context")]
 pub(crate) enum Error {
     Variant1(String),

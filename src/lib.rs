@@ -7,77 +7,11 @@
 #![no_std]
 
 pub use thisctx_impl::WithContext;
-pub use thisctx_impl_next::WithContextNext;
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 pub struct NoneSource;
 
-pub trait IntoError<E>: Sized {
-    type Source;
-
-    fn into_error(self, source: Self::Source) -> E;
-
-    fn build(self) -> E
-    where
-        Self: IntoError<E, Source = NoneSource>,
-    {
-        self.into_error(NoneSource)
-    }
-
-    // TODO: use never type instead?
-    fn fail<T>(self) -> Result<T, E>
-    where
-        Self: IntoError<E, Source = NoneSource>,
-    {
-        Err(self.build())
-    }
-}
-
-pub trait WithContext: Sized {
-    type Ok;
-    type Err;
-
-    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<Self::Ok, E>
-    where
-        C: IntoError<E>,
-        Self::Err: Into<C::Source>;
-
-    fn context<E, C>(self, context: C) -> Result<Self::Ok, E>
-    where
-        C: IntoError<E>,
-        Self::Err: Into<C::Source>,
-    {
-        self.context_with(|| context)
-    }
-}
-
-impl<T, Err> WithContext for Result<T, Err> {
-    type Err = Err;
-    type Ok = T;
-
-    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<T, E>
-    where
-        C: IntoError<E>,
-        Err: Into<C::Source>,
-    {
-        self.map_err(|e| f().into_error(e.into()))
-    }
-}
-
-impl<T> WithContext for Option<T> {
-    type Err = NoneSource;
-    type Ok = T;
-
-    fn context_with<E, C>(self, f: impl FnOnce() -> C) -> Result<T, E>
-    where
-        C: IntoError<E>,
-        NoneSource: Into<C::Source>,
-    {
-        self.ok_or_else(|| f().into_error(NoneSource.into()))
-    }
-}
-
-pub trait IntoErrorNext: Sized {
+pub trait IntoError: Sized {
     type Target;
     type Source;
 
@@ -85,14 +19,14 @@ pub trait IntoErrorNext: Sized {
 
     fn build(self) -> Self::Target
     where
-        Self: IntoErrorNext<Source = NoneSource>,
+        Self: IntoError<Source = NoneSource>,
     {
         self.into_error(NoneSource)
     }
 
     fn fail<T>(self) -> Result<T, Self::Target>
     where
-        Self: IntoErrorNext<Source = NoneSource>,
+        Self: IntoError<Source = NoneSource>,
     {
         Err(self.build())
     }
@@ -116,13 +50,13 @@ pub trait WithOptional<T> {
     fn with_optional(&mut self, value: T) -> Option<T>;
 }
 
-pub trait WithContextNext: Sized {
+pub trait WithContext: Sized {
     type Ok;
     type Err;
 
     fn context<C>(self, context: C) -> Result<Self::Ok, C::Target>
     where
-        C: IntoErrorNext,
+        C: IntoError,
         Self::Err: Into<C::Source>,
     {
         self.context_with(|| context)
@@ -130,7 +64,7 @@ pub trait WithContextNext: Sized {
 
     fn context_with<C>(self, f: impl FnOnce() -> C) -> Result<Self::Ok, C::Target>
     where
-        C: IntoErrorNext,
+        C: IntoError,
         Self::Err: Into<C::Source>;
 
     fn provide<C>(self, value: impl Into<C>) -> Self
@@ -145,13 +79,13 @@ pub trait WithContextNext: Sized {
         Self::Err: WithOptional<C>;
 }
 
-impl<T, E> WithContextNext for Result<T, E> {
+impl<T, E> WithContext for Result<T, E> {
     type Err = E;
     type Ok = T;
 
     fn context_with<C>(self, f: impl FnOnce() -> C) -> Result<T, C::Target>
     where
-        C: IntoErrorNext,
+        C: IntoError,
         E: Into<C::Source>,
     {
         self.map_err(|e| f().into_error(e.into()))
@@ -168,13 +102,13 @@ impl<T, E> WithContextNext for Result<T, E> {
     }
 }
 
-impl<T> WithContextNext for Option<T> {
+impl<T> WithContext for Option<T> {
     type Err = NoneSource;
     type Ok = T;
 
     fn context_with<C>(self, f: impl FnOnce() -> C) -> Result<T, C::Target>
     where
-        C: IntoErrorNext,
+        C: IntoError,
         NoneSource: Into<C::Source>,
     {
         self.ok_or_else(|| f().into_error(NoneSource.into()))
