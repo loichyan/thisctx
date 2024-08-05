@@ -4,6 +4,7 @@
 mod util;
 mod attrs;
 mod derive_with_context;
+mod infer;
 
 use syn::{parse_macro_input, DeriveInput};
 

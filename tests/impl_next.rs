@@ -72,5 +72,4 @@ pub struct MyErrorWithOptional<T, const N: usize> {
 
 #[derive(WithContextNext)]
 #[thisctx(suffix = "Context")]
-#[error(transparent)]
 pub struct MyTransparentError(String);

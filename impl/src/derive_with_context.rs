@@ -392,11 +392,8 @@ impl<'i> ContextInfo<'i, '_> {
                 continue;
             }
 
-            if f.attrs
-                .generic
-                .or(generic)
-                .unwrap_or_else(|| crate::infer::is_in_generic_whitelist(&f.ty))
-            {
+            // TODO: enable for some types by default
+            if f.attrs.generic.or(generic).unwrap_or(false) {
                 f.generic = Some(match &f.ident {
                     Some(i) => format_ident!("T_{}", i, span = i.span()),
                     None => format_ident!("T_{}", i),
