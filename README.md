@@ -354,7 +354,7 @@ pub(crate) struct ParseIntError;
 - [ ] Simplify the derive implementation.
 - [ ] More tests.
 
-## 🚩 Minimal supported Rust version
+## 🚩 Minimum supported Rust version
 
 All tests passed with `rustc v1.56`, earlier versions may not compile.
 

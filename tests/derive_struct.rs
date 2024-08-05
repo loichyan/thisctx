@@ -1,13 +1,15 @@
-use thisctx::{IntoError, WithContext};
+use thisctx::WithContextNext;
 
-#[derive(Debug, Eq, PartialEq, WithContext)]
+#[derive(Debug, Eq, PartialEq, WithContextNext)]
+#[thisctx(suffix = "Context")]
 struct NamedWithSource {
     context_1: String,
     source: &'static str,
     context_2: i32,
 }
 
-#[derive(Debug, Eq, PartialEq, WithContext)]
+#[derive(Debug, Eq, PartialEq, WithContextNext)]
+#[thisctx(suffix = "Context")]
 struct NamedWithSourceAttr {
     context_1: String,
     #[source]
@@ -15,29 +17,36 @@ struct NamedWithSourceAttr {
     context_2: i32,
 }
 
-#[derive(Debug, Eq, PartialEq, WithContext)]
+#[derive(Debug, Eq, PartialEq, WithContextNext)]
+#[thisctx(suffix = "Context")]
 struct NamedWithoutSource {
     context_1: String,
     context_2: i32,
 }
 
-#[derive(Debug, Eq, PartialEq, WithContext)]
+#[derive(Debug, Eq, PartialEq, WithContextNext)]
+#[thisctx(suffix = "Context")]
 struct EmptyNamed {}
 
-#[derive(Debug, Eq, PartialEq, WithContext)]
+#[derive(Debug, Eq, PartialEq, WithContextNext)]
+#[thisctx(suffix = "Context")]
 struct UnnamedWithSource(String, #[source] &'static str, i32);
 
-#[derive(Debug, Eq, PartialEq, WithContext)]
+#[derive(Debug, Eq, PartialEq, WithContextNext)]
+#[thisctx(suffix = "Context")]
 struct UnnamedWithoutSource(String, i32);
 
-#[derive(Debug, Eq, PartialEq, WithContext)]
+#[derive(Debug, Eq, PartialEq, WithContextNext)]
+#[thisctx(suffix = "Context")]
 struct EmptyUnnamed();
 
-#[derive(Debug, Eq, PartialEq, WithContext)]
+#[derive(Debug, Eq, PartialEq, WithContextNext)]
+#[thisctx(suffix = "Context")]
 struct Unit;
 
 #[test]
 fn derive_enum() {
+    use thisctx::IntoErrorNext;
     assert_eq!(
         NamedWithSourceContext {
             context_1: "Hello,",

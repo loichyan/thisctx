@@ -1,0 +1,13 @@
+error[E0277]: `DebugNotDerived<&str>` doesn't implement `Debug`
+  --> tests/compile_fail/attr_attr.rs:16:20
+   |
+16 |     requires_debug(DebugNotDerived("parent attributes are overridden"));
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `DebugNotDerived<&str>` cannot be formatted using `{:?}`
+   |
+   = help: the trait `Debug` is not implemented for `DebugNotDerived<&str>`
+   = note: add `#[derive(Debug)]` to `DebugNotDerived<&str>` or manually `impl Debug for DebugNotDerived<&str>`
+note: required by a bound in `requires_debug`
+  --> tests/compile_fail/attr_attr.rs:11:22
+   |
+11 | fn requires_debug<T: std::fmt::Debug>(_: T) {}
+   |                      ^^^^^^^^^^^^^^^ required by this bound in `requires_debug`
