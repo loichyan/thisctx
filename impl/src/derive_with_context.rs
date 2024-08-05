@@ -81,30 +81,10 @@ pub(crate) fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     for fields in optional_fields.values() {
         let ty = &fields[0].field.ty;
         let input_name = &input.ident;
-
-        let variant_prefix = to_variant_prefix(&input);
-        let impl_body = QuoteWith(|tokens| {
-            for OptionalField {
-                parent,
-                field,
-                index,
-            } in fields
-            {
-                let member = to_member(field, *index);
-                tokens.extend(quote!(
-                    // This works on both named and unnamed structs.
-                    if let #variant_prefix #parent {
-                        #member: __self,
-                        ..
-                    } = self {
-                        return #RT::Optional::set(__self, __value);
-                    }
-                ));
-            }
-        });
-
+        let impl_body = to_with_optional_body(&input, fields);
         let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-        quote!(
+
+        output.extend(quote!(
             impl #impl_generics #RT::WithOptional<<#ty as #RT::Optional>::Inner>
             for #input_name #ty_generics #where_clause {
                 #[allow(irrefutable_let_patterns)]
@@ -113,11 +93,9 @@ pub(crate) fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                     __value: <#ty as #RT::Optional>::Inner
                 ) -> #RT::Option<<#ty as #RT::Optional>::Inner> {
                     #impl_body
-                    return #RT::Option::Some(__value);
                 }
             }
-        )
-        .to_tokens(&mut output);
+        ));
     }
 
     /* --------------------- *
@@ -164,38 +142,6 @@ impl<'i> ContextInfo<'i, '_> {
         } = self;
         let fields_info = self.parse_fields_info(global)?;
 
-        /* --------------- *
-         * generate fields *
-         * --------------- */
-
-        let def_fields = fields_info.to_def().to_token_stream();
-        let def_body = Group::new(
-            if def_fields.is_empty() {
-                // Emit a unit struct if possible,
-                Delimiter::None
-            } else {
-                // otherwise, use its original delimiter
-                match fields {
-                    Fields::Named(_) => Delimiter::Brace,
-                    Fields::Unnamed(_) => Delimiter::Parenthesis,
-                    Fields::Unit => Delimiter::None,
-                }
-            },
-            def_fields,
-        );
-
-        let expr_fields = fields_info.to_expr().to_token_stream();
-        let expr_body = Group::new(
-            // Tuple structs can be constructed using indices:
-            //
-            // MyTuple {
-            //     0: "field_0",
-            //     1: "field_1",
-            // }
-            Delimiter::Brace,
-            expr_fields,
-        );
-
         /* ------------------------ *
          * generate names and types *
          * ------------------------ */
@@ -232,9 +178,9 @@ impl<'i> ContextInfo<'i, '_> {
 
         // IntoError::Source
         let source = QuoteWith(|tokens| {
-            if let Some(source) = fields_info.source_field {
+            if let Some(i) = fields_info.source_field {
                 // use the specified source type
-                fields_info[source].ty.to_tokens(tokens);
+                fields_info[i].ty.to_tokens(tokens);
             } else {
                 tokens.extend(quote!(#RT::NoneSource));
             }
@@ -265,6 +211,25 @@ impl<'i> ContextInfo<'i, '_> {
         let orig_generic_bounds = to_generic_bounds(&input.generics);
         let orig_where_clause = input.generics.where_clause.as_ref();
 
+        /* ------------------- *
+         * generate definition *
+         * ------------------- */
+
+        let def_fields = fields_info.to_def().into_token_stream();
+        let def_body = Group::new(
+            if def_fields.is_empty() {
+                // Emit a unit struct if possible,
+                Delimiter::None
+            } else {
+                // otherwise, use its original delimiter
+                match fields {
+                    Fields::Named(_) => Delimiter::Brace,
+                    Fields::Unnamed(_) => Delimiter::Parenthesis,
+                    Fields::Unit => Delimiter::None,
+                }
+            },
+            def_fields,
+        );
         let def_body_with_where_clause = QuoteWith(|tokens| {
             if def_body.delimiter() == Delimiter::Brace {
                 // struct Foo <...> where ... {...}
@@ -280,21 +245,26 @@ impl<'i> ContextInfo<'i, '_> {
             }
         });
 
-        /* -------------------------------------- *
-         * generate definition and IntoError impl *
-         * -------------------------------------- */
-
         let outer_attrs = attrs
             .to_outer_attrs()
             // inherit #[thisctx(attr)]
             .or_else(|| parent_attrs.and_then(Attrs::to_outer_attrs));
-        let variant_prefix = to_variant_prefix(input);
-        quote!(
+
+        global.output.extend(quote!(
             #[allow(non_camel_case_types)] #outer_attrs
             #vis struct #name<
                 #orig_def_params #def_params #orig_def_const_params
             > #def_body_with_where_clause
+        ));
 
+        /* ----------------------- *
+         * generate IntoError impl *
+         * ----------------------- */
+
+        let variant_prefix = to_variant_prefix(input);
+        let into_error_body = to_constructor(self.input, &fields_info, "__source");
+
+        global.output.extend(quote!(
             #[allow(non_camel_case_types)]
             impl<#orig_def_params #ty_params #orig_def_const_params> #RT::IntoError
             for #name<#orig_ty_params #ty_params #orig_ty_const_params>
@@ -303,12 +273,33 @@ impl<'i> ContextInfo<'i, '_> {
                 type Source = #source;
                 fn into_error(self, __source: #source) -> #target {
                     #RT::Into::<#target>::into(
-                        #variant_prefix #orig_name #expr_body
+                        #variant_prefix #orig_name #into_error_body
                     )
                 }
             }
-        )
-        .to_tokens(&mut global.output);
+        ));
+
+        /* -------------------------- *
+         * generate From<Source> impl *
+         * -------------------------- */
+
+        if let Some(i) = fields_info.from_field {
+            let from_ty = &fields_info[i].ty;
+            let from_body = to_constructor(self.input, &fields_info, "__value");
+            let (impl_generics, _, where_clause) = input.generics.split_for_impl();
+
+            global.output.extend(quote!(
+                #[allow(non_camel_case_types)]
+                impl #impl_generics #RT::From<#from_ty>
+                for #target #where_clause {
+                    fn from(__value: #from_ty) -> #target {
+                        #RT::Into::<#target>::into(
+                            #variant_prefix #orig_name #from_body
+                        )
+                    }
+                }
+            ));
+        }
         Ok(())
     }
 
@@ -322,8 +313,10 @@ impl<'i> ContextInfo<'i, '_> {
 
         // 1st-pass: find source filed
         let mut source_field = None;
+        let mut from_field = None;
         let mut field_named_source = None;
         let mut len = 0;
+        let mut optionals_count = 0;
         for (i, field) in self.fields.iter().enumerate() {
             len += 1;
             let f_attrs = crate::attrs::parse_field(field)?;
@@ -339,8 +332,17 @@ impl<'i> ContextInfo<'i, '_> {
                 field_named_source = Some(i);
             }
 
-            // collect optional field
+            // check from field
+            if f_attrs.from {
+                if from_field.is_some() {
+                    return Err(syn::Error::new(self.span(), "duplicate from fields"));
+                }
+                from_field = Some(i);
+            }
+
+            // collect optional fields
             if let Some(optional) = &f_attrs.optional {
+                optionals_count += 1;
                 let id = optional
                     .as_ref()
                     .or_else(|| field.ident.as_ref())
@@ -371,11 +373,21 @@ impl<'i> ContextInfo<'i, '_> {
             if len != 1 {
                 return Err(syn::Error::new(
                     self.span(),
-                    "a transparent context must have exact 1 field",
+                    "a transparent context must have exactly 1 field",
                 ));
             }
             source_field = Some(0);
             field_infos[0].attrs.source = true;
+        } else if let Some(i) = from_field {
+            // From attributes always implies that the same field is source.
+            if (len - optionals_count) != 1 {
+                return Err(syn::Error::new(
+                    self.span(),
+                    "`from` requires exactly 1 field (excluding optional fields)",
+                ));
+            }
+            source_field = from_field;
+            field_infos[i].attrs.source = true;
         } else if let (None, Some(i)) = (source_field, field_named_source) {
             // Source attribute takes precedence over the field name "source".
             source_field = field_named_source;
@@ -409,6 +421,7 @@ impl<'i> ContextInfo<'i, '_> {
         Ok(FieldsInfo {
             i: field_infos,
             source_field,
+            from_field,
         })
     }
 
@@ -417,9 +430,79 @@ impl<'i> ContextInfo<'i, '_> {
     }
 }
 
+fn to_constructor<'a>(
+    _input: &'a DeriveInput,
+    fields: &'a FieldsInfo,
+    source: &'static str,
+) -> impl 'a + ToTokens {
+    // Tuple structs can be constructed using indices:
+    //
+    // let my_tuple = MyTuple {
+    //     0: "field_0",
+    //     1: "field_1",
+    //     ..
+    // };
+    let fields = QuoteWith(move |tokens| {
+        let mut shift = 0usize;
+        for (i, f) in fields.iter().enumerate() {
+            to_member(f, i).to_tokens(tokens);
+            NewToken![:].to_tokens(tokens);
+            let ty = &f.ty;
+            tokens.extend(if f.attrs.source {
+                shift += 1;
+                Ident::new(source, Span::call_site()).into_token_stream()
+            } else if f.attrs.optional.is_some() {
+                shift += 1;
+                quote!(<#ty as #RT::Default>::default())
+            } else {
+                // shift excluded fields to get the correct member index
+                let member = to_member(f, i - shift);
+                // Into::into works on both generic and non-generic fields
+                quote!(#RT::Into::<#ty>::into(self.#member))
+            });
+            NewToken![,].to_tokens(tokens);
+        }
+    });
+    Group::new(Delimiter::Brace, fields.into_token_stream())
+}
+
+fn to_with_optional_body<'a>(
+    input: &'a DeriveInput,
+    fields: &'a [OptionalField],
+) -> impl 'a + ToTokens {
+    // Tuple structs can be deconstructed using indices:
+    //
+    // let MyTuple {
+    //     0: field_0,
+    //     1: field_1,
+    //     ..
+    // } = my_tuple;
+    let variant_prefix = to_variant_prefix(input);
+    QuoteWith(move |tokens| {
+        for OptionalField {
+            parent,
+            field,
+            index,
+        } in fields
+        {
+            let member = to_member(field, *index);
+            tokens.extend(quote!(
+                if let #variant_prefix #parent {
+                    #member: __self,
+                    ..
+                } = self {
+                    return #RT::Optional::set(__self, __value);
+                }
+            ));
+        }
+        tokens.extend(quote!(return #RT::Option::Some(__value)));
+    })
+}
+
 struct FieldsInfo<'a> {
     i: Vec<FieldInfo<'a>>,
     source_field: Option<usize>,
+    from_field: Option<usize>,
 }
 
 impl<'a> ops::Deref for FieldsInfo<'a> {
@@ -447,31 +530,6 @@ impl FieldsInfo<'_> {
                 } else {
                     f.ty.to_tokens(tokens);
                 }
-                NewToken![,].to_tokens(tokens);
-            }
-        })
-    }
-
-    fn to_expr(&self) -> impl '_ + ToTokens {
-        QuoteWith(move |tokens| {
-            let mut shift = 0usize;
-            for (i, f) in self.iter().enumerate() {
-                to_member(f, i).to_tokens(tokens);
-                NewToken![:].to_tokens(tokens);
-                let ty = &f.ty;
-                if f.attrs.source {
-                    shift += 1;
-                    quote!(__source)
-                } else if f.attrs.optional.is_some() {
-                    shift += 1;
-                    quote!(<#ty as #RT::Default>::default())
-                } else {
-                    // shift excluded fields to get the correct member index
-                    let member = to_member(f, i - shift);
-                    // Into::into works on both generic and non-generic fields
-                    quote!(#RT::Into::<#ty>::into(self.#member))
-                }
-                .to_tokens(tokens);
                 NewToken![,].to_tokens(tokens);
             }
         })
@@ -557,7 +615,7 @@ impl Attrs {
             Some(QuoteWith(move |tokens| {
                 for a in self.attr.iter() {
                     NewToken![#].to_tokens(tokens);
-                    Group::new(Delimiter::Bracket, a.clone()).to_tokens(tokens);
+                    tokens.extend(Group::new(Delimiter::Bracket, a.clone()).into_token_stream());
                 }
             }))
         }

@@ -5,7 +5,7 @@ use syn::{Ident, LitBool, Type, Visibility};
 
 pub(crate) fn parse_container(input: &syn::DeriveInput) -> syn::Result<Attrs> {
     let (mut c, args) = parse_args(&input.attrs)?;
-    c.blocked_all(group![&args.optional, &args.source]);
+    c.blocked_all(group![&args.from, &args.optional, &args.source]);
     if matches!(input.data, syn::Data::Enum(_)) {
         c.blocked_all(group![&args.rename, &args.transparent]);
     } else {
@@ -16,7 +16,12 @@ pub(crate) fn parse_container(input: &syn::DeriveInput) -> syn::Result<Attrs> {
 
 pub(crate) fn parse_variant(input: &syn::Variant) -> syn::Result<Attrs> {
     let (mut c, args) = parse_args(&input.attrs)?;
-    c.blocked_all(group![&args.module, &args.optional, &args.source]);
+    c.blocked_all(group![
+        &args.from,
+        &args.module,
+        &args.optional,
+        &args.source,
+    ]);
     build_attrs(&mut c, args)
 }
 
@@ -88,6 +93,7 @@ fn build_attrs(c: &mut plap::Checker, args: ThisctxArgs) -> syn::Result<Attrs> {
     let ThisctxArgs {
         attr,
         attribute,
+        from,
         magic,
         module,
         optional,
@@ -107,6 +113,7 @@ fn build_attrs(c: &mut plap::Checker, args: ThisctxArgs) -> syn::Result<Attrs> {
             .into_iter()
             .chain(attribute.take_any())
             .collect(),
+        from: from.take_flag(),
         magic: magic.take_last().map(|t| t.value()),
         module: module.take_last(),
         optional: optional.take_last().map(|t| t.0),
@@ -124,6 +131,8 @@ fn build_attrs(c: &mut plap::Checker, args: ThisctxArgs) -> syn::Result<Attrs> {
 pub(crate) struct Attrs {
     // field, struct, variant -> enum
     pub attr: Vec<TokenStream>,
+    // field
+    pub from: bool,
     // field -> struct, field -> variant -> enum
     pub magic: Option<bool>,
     // struct, enum
@@ -154,10 +163,16 @@ plap::define_args!(
     #[check(exclusive_aliases = [vis, visibility])]
     struct ThisctxArgs {
         #[arg(is_token_tree)]
+        #[check(conflicts_with_any = [from, optional, source])]
         attr: plap::Arg<TokenStream>,
 
         #[arg(is_token_tree)]
+        #[check(conflicts_with_any = [from, optional, source])]
         attribute: plap::Arg<TokenStream>,
+
+        #[arg(is_flag)]
+        #[check(exclusive, conflicts_with_any = [magic, optional])]
+        from: plap::Arg<LitBool>,
 
         #[arg(is_flag)]
         #[check(exclusive, conflicts_with_any = [optional, source, transparent])]
