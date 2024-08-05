@@ -8,7 +8,7 @@ macro_rules! matches_any {
     }};
 }
 
-pub(crate) fn is_in_generic_whitelist(ty: &Type) -> bool {
+pub(crate) fn is_in_magic_whitelist(ty: &Type) -> bool {
     if let Some(name) = infer_std(ty) {
         matches_any!(name, "String", "PathBuf", "Vec", "Box", "Arc", "OsString", "CString", "Rc")
     } else {
@@ -52,17 +52,17 @@ mod tests {
         }
     }
 
-    fn test_in_generic_whitelist(input: &str) {
+    fn test_in_magic_whitelist(input: &str) {
         let ty: Type = syn::parse_str(input).unwrap();
-        if !super::is_in_generic_whitelist(&ty) {
-            panic!("{} is not in the generic whitelist", input);
+        if !super::is_in_magic_whitelist(&ty) {
+            panic!("{} is not in the magic whitelist", input);
         }
     }
 
-    fn test_not_in_generic_whitelist(input: &str) {
+    fn test_not_in_magic_whitelist(input: &str) {
         let ty: Type = syn::parse_str(input).unwrap();
-        if super::is_in_generic_whitelist(&ty) {
-            panic!("{} is in the generic whitelist", input);
+        if super::is_in_magic_whitelist(&ty) {
+            panic!("{} is in the magic whitelist", input);
         }
     }
 
@@ -99,31 +99,31 @@ mod tests {
     }
 
     #[test]
-    fn in_generic_whitelist() {
-        test_in_generic_whitelist("String");
-        test_in_generic_whitelist("String<>");
-        test_in_generic_whitelist("String::<>");
+    fn in_magic_whitelist() {
+        test_in_magic_whitelist("String");
+        test_in_magic_whitelist("String<>");
+        test_in_magic_whitelist("String::<>");
 
-        test_in_generic_whitelist("std::path::PathBuf");
-        test_in_generic_whitelist("std::ffi::OsString");
-        test_in_generic_whitelist("std::ffi::OsString");
+        test_in_magic_whitelist("std::path::PathBuf");
+        test_in_magic_whitelist("std::ffi::OsString");
+        test_in_magic_whitelist("std::ffi::OsString");
 
-        test_in_generic_whitelist("CString");
-        test_in_generic_whitelist("CString<Allocator>");
-        test_in_generic_whitelist("CString::<Allocator>");
+        test_in_magic_whitelist("CString");
+        test_in_magic_whitelist("CString<Allocator>");
+        test_in_magic_whitelist("CString::<Allocator>");
 
-        test_in_generic_whitelist("Vec<i32>");
-        test_in_generic_whitelist("Box<str, Allocator>");
-        test_in_generic_whitelist("std::sync::Arc<std::path::Path>");
-        test_in_generic_whitelist("::std::rc::Rc<std::ffi::CStr, Allocator>");
+        test_in_magic_whitelist("Vec<i32>");
+        test_in_magic_whitelist("Box<str, Allocator>");
+        test_in_magic_whitelist("std::sync::Arc<std::path::Path>");
+        test_in_magic_whitelist("::std::rc::Rc<std::ffi::CStr, Allocator>");
 
         // this eventually causes a compilation error
-        test_in_generic_whitelist("std::wrong::path::Arc");
+        test_in_magic_whitelist("std::wrong::path::Arc");
     }
 
     #[test]
-    fn not_in_generic_whitelist() {
-        test_not_in_generic_whitelist("::String");
-        test_not_in_generic_whitelist("some::magical::path::Arc");
+    fn not_in_magic_whitelist() {
+        test_not_in_magic_whitelist("::String");
+        test_not_in_magic_whitelist("some::magical::path::Arc");
     }
 }

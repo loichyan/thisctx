@@ -88,7 +88,7 @@ fn build_attrs(c: &mut plap::Checker, args: ThisctxArgs) -> syn::Result<Attrs> {
     let ThisctxArgs {
         attr,
         attribute,
-        generic,
+        magic,
         module,
         optional,
         prefix,
@@ -107,7 +107,7 @@ fn build_attrs(c: &mut plap::Checker, args: ThisctxArgs) -> syn::Result<Attrs> {
             .into_iter()
             .chain(attribute.take_any())
             .collect(),
-        generic: generic.take_last().map(|t| t.value()),
+        magic: magic.take_last().map(|t| t.value()),
         module: module.take_last(),
         optional: optional.take_last().map(|t| t.0),
         prefix: prefix.take_last(),
@@ -125,7 +125,7 @@ pub(crate) struct Attrs {
     // field, struct, variant -> enum
     pub attr: Vec<TokenStream>,
     // field -> struct, field -> variant -> enum
-    pub generic: Option<bool>,
+    pub magic: Option<bool>,
     // struct, enum
     pub module: Option<Ident>,
     // field
@@ -161,7 +161,7 @@ plap::define_args!(
 
         #[arg(is_flag)]
         #[check(exclusive, conflicts_with_any = [optional, source, transparent])]
-        generic: plap::Arg<LitBool>,
+        magic: plap::Arg<LitBool>,
 
         // TODO: link docs to argument keys
         // #[arg(is_help)]

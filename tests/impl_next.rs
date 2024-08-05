@@ -3,14 +3,14 @@ use std::marker::PhantomData;
 use thisctx::WithContextNext;
 
 #[derive(WithContextNext)]
-#[thisctx(suffix = "Context", generic)]
+#[thisctx(suffix = "Context", magic)]
 pub struct MyStruct {
     field1: String,
     field2: usize,
 }
 
 #[derive(WithContextNext)]
-#[thisctx(generic)]
+#[thisctx(magic)]
 pub enum MyEnum {
     Variant1(String, i32),
     Variant2(usize, Vec<u32>),
@@ -35,26 +35,26 @@ impl From<MyEnum> for MyStruct {
 #[thisctx(suffix = "Context")]
 pub struct MyError<'a, T: std::fmt::Display, const N: usize>(
     #[source] std::io::Error,
-    #[thisctx(generic)] std::str::Utf8Error,
+    #[thisctx(magic)] std::str::Utf8Error,
     &'a [T; N],
 )
 where
     T: std::fmt::Debug;
 
 #[derive(WithContextNext)]
-pub enum MyEnumWithGenerics<'a, T: std::fmt::Display, const N: usize>
+pub enum MyEnumWithmagics<'a, T: std::fmt::Display, const N: usize>
 where
     T: std::fmt::Debug,
 {
     V1(
         #[source] std::io::Error,
-        #[thisctx(generic)] std::str::Utf8Error,
+        #[thisctx(magic)] std::str::Utf8Error,
         &'a [T; N],
         #[thisctx(optional = "path")] Option<String>,
     ),
     V2(
         #[source] std::io::Error,
-        #[thisctx(generic)] std::str::Utf8Error,
+        #[thisctx(magic)] std::str::Utf8Error,
         PhantomData<&'a [T; N]>,
         #[thisctx(optional = "path")] Option<String>,
     ),
@@ -63,7 +63,7 @@ where
 #[derive(WithContextNext)]
 #[thisctx(suffix = "Context")]
 pub struct MyErrorWithOptional<T, const N: usize> {
-    #[thisctx(generic)]
+    #[thisctx(magic)]
     reason: String,
     #[thisctx(optional)]
     path: Option<String>,
