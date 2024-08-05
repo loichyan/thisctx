@@ -9,7 +9,7 @@ authors = ["Loi Chyan <loichyan@foxmail.com>"]
 edition = "2021"
 rust-version = "1.56"
 
-description = "Easily create error with contexts"
+description = "A handy macro to create error with contexts"
 readme = "README.md"
 repository = "https://github.com/loichyan/thisctx"
 documentation = "https://docs.rs/thisctx"
