@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 #![no_std]
 
 #[derive(thisctx::WithContext)]

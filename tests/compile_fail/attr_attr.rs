@@ -1,4 +1,6 @@
-#[derive(thisctx::WithContext )]
+#![allow(dead_code)]
+
+#[derive(thisctx::WithContext)]
 #[thisctx(attr = "derive(Debug)")]
 pub enum Error {
     DebugDerived(String),

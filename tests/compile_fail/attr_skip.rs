@@ -1,4 +1,6 @@
-#[derive(thisctx::WithContext )]
+#![allow(dead_code)]
+
+#[derive(thisctx::WithContext)]
 #[thisctx(skip)]
 enum Error {
     #[thisctx(skip = false)]

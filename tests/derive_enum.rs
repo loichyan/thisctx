@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[derive(Debug, Eq, PartialEq, thisctx::WithContext)]
 enum Error {
     NamedWithSource {

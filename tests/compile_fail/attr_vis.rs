@@ -1,9 +1,10 @@
+#![allow(dead_code)]
 #![allow(unused_imports)]
 
 // Arbitrary tokens in custom attributes are supported since Rust 1.34.
 // https://blog.rust-lang.org/2019/04/11/Rust-1.34.0.html#custom-attributes-accept-arbitrary-token-streams
 mod error {
-    #[derive(thisctx::WithContext )]
+    #[derive(thisctx::WithContext)]
     pub enum Error {
         #[thisctx(vis = "pub")]
         Pub(i32),

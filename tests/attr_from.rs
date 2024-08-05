@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 struct Remote;
 
 #[derive(thisctx::WithContext)]

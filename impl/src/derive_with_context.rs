@@ -28,6 +28,7 @@ impl ToTokens for RT {
 pub(crate) fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     let attrs = crate::attrs::parse_container(&input)?;
     let vis = attrs.resolve_vis(&input.vis);
+
     let mut global = GlobalData::default();
     match &input.data {
         syn::Data::Struct(s) => {
@@ -80,9 +81,10 @@ pub(crate) fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
     //                   ^^^ type is identified by #[thisctx(optional = <id>)]
     for fields in optional_fields.values() {
         let ty = &fields[0].field.ty;
+        let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
         let input_name = &input.ident;
         let impl_body = to_with_optional_body(&input, fields);
-        let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
         output.extend(quote!(
             impl #impl_generics #RT::WithOptional<<#ty as #RT::Optional>::Inner>
@@ -90,7 +92,7 @@ pub(crate) fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
                 #[allow(irrefutable_let_patterns)]
                 fn with_optional(
                     &mut self,
-                    __value: <#ty as #RT::Optional>::Inner
+                    __value: <#ty as #RT::Optional>::Inner,
                 ) -> #RT::Option<<#ty as #RT::Optional>::Inner> {
                     #impl_body
                 }
@@ -186,98 +188,94 @@ impl<'i> ContextInfo<'i, '_> {
             }
         });
 
-        /* ----------------- *
-         * generate generics *
-         * ----------------- */
-
-        let def_params = fields_info.to_generic_params(
-            // Disable generic defaults if there are const parameters:
-            //
-            // > rustc: generic parameters with a default must be trailing
-            // > using type defaults and const parameters in the same parameter
-            // > list is currently not permitted
-            input.generics.const_params().count() == 0,
-        );
-        let ty_params = fields_info.to_generic_params(false);
-        let generic_bounds = fields_info.to_generic_bounds();
-
-        // Split const parameters and non-const parameters:
-        //
-        // > rustc: type parameters must be declared prior to const parameters
-        let orig_def_params = to_generic_params(&input.generics, false, false);
-        let orig_def_const_params = to_generic_params(&input.generics, false, true);
-        let orig_ty_params = to_generic_params(&input.generics, true, false);
-        let orig_ty_const_params = to_generic_params(&input.generics, true, true);
-        let orig_generic_bounds = to_generic_bounds(&input.generics);
-        let orig_where_clause = input.generics.where_clause.as_ref();
+        // magic generics
+        let magic_params = fields_info.to_generic_params(false);
+        let magic_bounds = fields_info.to_generic_bounds();
 
         /* ------------------- *
          * generate definition *
          * ------------------- */
+        {
+            let outer_attrs = attrs
+                .to_outer_attrs()
+                // inherit #[thisctx(attr)]
+                .or_else(|| parent_attrs.and_then(Attrs::to_outer_attrs));
 
-        let def_fields = fields_info.to_def().into_token_stream();
-        let def_body = Group::new(
-            if def_fields.is_empty() {
-                // Emit a unit struct if possible,
-                Delimiter::None
-            } else {
-                // otherwise, use its original delimiter
-                match fields {
-                    Fields::Named(_) => Delimiter::Brace,
-                    Fields::Unnamed(_) => Delimiter::Parenthesis,
-                    Fields::Unit => Delimiter::None,
+            let magic_defs = fields_info.to_generic_params(
+                // Disable generic defaults if there are const parameters:
+                //
+                // > rustc: generic parameters with a default must be trailing
+                // > using type defaults and const parameters in the same parameter
+                // > list is currently not permitted
+                input.generics.const_params().count() == 0,
+            );
+            let (def_params, def_kst_params) = split_generic_params(&input.generics, true, true);
+
+            let def_fields = fields_info.to_def().into_token_stream();
+            let def_body = Group::new(
+                if def_fields.is_empty() {
+                    // Emit a unit struct if possible,
+                    Delimiter::None
+                } else {
+                    // otherwise, use its original delimiter
+                    match fields {
+                        Fields::Named(_) => Delimiter::Brace,
+                        Fields::Unnamed(_) => Delimiter::Parenthesis,
+                        Fields::Unit => Delimiter::None,
+                    }
+                },
+                def_fields,
+            );
+
+            let where_clause = input.generics.where_clause.as_ref();
+            let def_body_with_where_clause = QuoteWith(|tokens| {
+                if def_body.delimiter() == Delimiter::Brace {
+                    // struct Foo <...> where ... {...}
+                    //                  ^^^^^^^^^ before body
+                    where_clause.to_tokens(tokens);
+                    def_body.to_tokens(tokens);
+                } else {
+                    // struct Foo <...> (...) where ... ; <- semi is required
+                    //                        ^^^^^^^^^ after body
+                    def_body.to_tokens(tokens);
+                    where_clause.to_tokens(tokens);
+                    NewToken![;].to_tokens(tokens);
                 }
-            },
-            def_fields,
-        );
-        let def_body_with_where_clause = QuoteWith(|tokens| {
-            if def_body.delimiter() == Delimiter::Brace {
-                // struct Foo <...> where ... {...}
-                //                  ^^^^^^^^^ before body
-                orig_where_clause.to_tokens(tokens);
-                def_body.to_tokens(tokens);
-            } else {
-                // struct Foo <...> (...) where ... ; <- semi is required
-                //                        ^^^^^^^^^ after body
-                def_body.to_tokens(tokens);
-                orig_where_clause.to_tokens(tokens);
-                NewToken![;].to_tokens(tokens);
-            }
-        });
+            });
 
-        let outer_attrs = attrs
-            .to_outer_attrs()
-            // inherit #[thisctx(attr)]
-            .or_else(|| parent_attrs.and_then(Attrs::to_outer_attrs));
-
-        global.output.extend(quote!(
-            #[allow(non_camel_case_types)] #outer_attrs
-            #vis struct #name<
-                #orig_def_params #def_params #orig_def_const_params
-            > #def_body_with_where_clause
-        ));
+            global.output.extend(quote!(
+                #[allow(non_camel_case_types)] #outer_attrs
+                #vis struct #name<#def_params #magic_defs #def_kst_params>
+                #def_body_with_where_clause
+            ));
+        }
 
         /* ----------------------- *
          * generate IntoError impl *
          * ----------------------- */
+        {
+            let (impl_params, impl_kst_params) = split_generic_params(&input.generics, true, false);
+            let (ty_params, ty_kst_params) = split_generic_params(&input.generics, false, false);
+            let geneirc_bounds = to_generic_bounds(&input.generics);
 
-        let variant_prefix = to_variant_prefix(input);
-        let into_error_body = to_constructor(self.input, &fields_info, "__source");
+            let variant_prefix = to_variant_prefix(input);
+            let into_error_body = to_constructor(self.input, &fields_info, "__source");
 
-        global.output.extend(quote!(
-            #[allow(non_camel_case_types)]
-            impl<#orig_def_params #ty_params #orig_def_const_params> #RT::IntoError
-            for #name<#orig_ty_params #ty_params #orig_ty_const_params>
-            where #orig_generic_bounds #generic_bounds {
-                type Target = #target;
-                type Source = #source;
-                fn into_error(self, __source: #source) -> #target {
-                    #RT::Into::<#target>::into(
-                        #variant_prefix #orig_name #into_error_body
-                    )
+            global.output.extend(quote!(
+                #[allow(non_camel_case_types)]
+                impl<#impl_params #magic_params #impl_kst_params> #RT::IntoError
+                for #name<#ty_params #magic_params #ty_kst_params>
+                where #geneirc_bounds #magic_bounds {
+                    type Target = #target;
+                    type Source = #source;
+                    fn into_error(self, __source: #source) -> #target {
+                        #RT::Into::<#target>::into(
+                            #variant_prefix #orig_name #into_error_body
+                        )
+                    }
                 }
-            }
-        ));
+            ));
+        }
 
         /* -------------------------- *
          * generate From<Source> impl *
@@ -285,13 +283,15 @@ impl<'i> ContextInfo<'i, '_> {
 
         if let Some(i) = fields_info.from_field {
             let from_ty = &fields_info[i].ty;
-            let from_body = to_constructor(self.input, &fields_info, "__value");
             let (impl_generics, _, where_clause) = input.generics.split_for_impl();
+
+            let variant_prefix = to_variant_prefix(input);
+            let from_body = to_constructor(self.input, &fields_info, "__value");
 
             global.output.extend(quote!(
                 #[allow(non_camel_case_types)]
-                impl #impl_generics #RT::From<#from_ty>
-                for #target #where_clause {
+                impl #impl_generics #RT::From<#from_ty> for #target
+                #where_clause {
                     fn from(__value: #from_ty) -> #target {
                         #RT::Into::<#target>::into(
                             #variant_prefix #orig_name #from_body
@@ -622,16 +622,72 @@ impl Attrs {
     }
 }
 
-fn to_member(f: &Field, index: usize) -> impl '_ + ToTokens {
-    QuoteWith(move |tokens| {
-        if let Some(i) = &f.ident {
-            i.to_tokens(tokens);
-        } else {
-            syn::Index {
-                index: index as u32,
-                span: Span::call_site(),
+fn split_generic_params(
+    generics: &Generics,
+    with_bounds: bool,
+    with_defaults: bool,
+) -> (impl '_ + ToTokens, impl '_ + ToTokens) {
+    // Split const parameters and non-const parameters:
+    //
+    // > rustc: type parameters must be declared prior to const parameters
+    let non_kst_params = QuoteWith(move |tokens| {
+        for param in generics.params.iter() {
+            match param {
+                GenericParam::Lifetime(l) => {
+                    l.lifetime.to_tokens(tokens);
+                    if with_bounds {
+                        l.colon_token.to_tokens(tokens);
+                        l.bounds.to_tokens(tokens);
+                    }
+                }
+                GenericParam::Type(t) => {
+                    t.ident.to_tokens(tokens);
+                    if with_bounds {
+                        t.colon_token.to_tokens(tokens);
+                        t.bounds.to_tokens(tokens);
+                    }
+                    if with_defaults {
+                        t.eq_token.to_tokens(tokens);
+                        t.default.to_tokens(tokens);
+                    }
+                }
+                _ => continue,
             }
-            .to_tokens(tokens);
+            NewToken![,].to_tokens(tokens);
+        }
+    });
+    let kst_params = QuoteWith(move |tokens| {
+        for param in generics.params.iter() {
+            match param {
+                GenericParam::Const(k) => {
+                    if with_bounds || with_defaults {
+                        k.const_token.to_tokens(tokens);
+                        k.ident.to_tokens(tokens);
+                        k.colon_token.to_tokens(tokens);
+                        k.ty.to_tokens(tokens);
+                    } else {
+                        k.ident.to_tokens(tokens);
+                    }
+                    if with_defaults {
+                        k.eq_token.to_tokens(tokens);
+                        k.default.to_tokens(tokens);
+                    }
+                }
+                _ => continue,
+            }
+            NewToken![,].to_tokens(tokens);
+        }
+    });
+    (non_kst_params, kst_params)
+}
+
+fn to_generic_bounds(generics: &Generics) -> impl '_ + ToTokens {
+    QuoteWith(move |tokens| {
+        if let Some(where_clause) = &generics.where_clause {
+            for pred in where_clause.predicates.iter() {
+                pred.to_tokens(tokens);
+                NewToken![,].to_tokens(tokens);
+            }
         }
     })
 }
@@ -646,52 +702,16 @@ fn to_variant_prefix(input: &DeriveInput) -> impl '_ + ToTokens {
     })
 }
 
-fn to_generic_params(
-    generics: &Generics,
-    name_only: bool,
-    select_consts: bool,
-) -> impl '_ + ToTokens {
+fn to_member(f: &Field, index: usize) -> impl '_ + ToTokens {
     QuoteWith(move |tokens| {
-        for param in generics.params.iter() {
-            match param {
-                // If select_consts is true, we only print const parameters,
-                GenericParam::Lifetime(l) if !select_consts => {
-                    if name_only {
-                        l.lifetime.to_tokens(tokens)
-                    } else {
-                        l.to_tokens(tokens)
-                    }
-                }
-                // otherwise, only print non-const parameters. This helps us to
-                // split const and non-const parameters.
-                GenericParam::Type(t) if !select_consts => {
-                    if name_only {
-                        t.ident.to_tokens(tokens)
-                    } else {
-                        t.to_tokens(tokens)
-                    }
-                }
-                GenericParam::Const(k) if select_consts => {
-                    if name_only {
-                        k.ident.to_tokens(tokens)
-                    } else {
-                        k.to_tokens(tokens)
-                    }
-                }
-                _ => continue,
+        if let Some(i) = &f.ident {
+            i.to_tokens(tokens);
+        } else {
+            syn::Index {
+                index: index as u32,
+                span: Span::call_site(),
             }
-            NewToken![,].to_tokens(tokens);
-        }
-    })
-}
-
-fn to_generic_bounds(generics: &Generics) -> impl '_ + ToTokens {
-    QuoteWith(move |tokens| {
-        if let Some(where_clause) = &generics.where_clause {
-            for pred in where_clause.predicates.iter() {
-                pred.to_tokens(tokens);
-                NewToken![,].to_tokens(tokens);
-            }
+            .to_tokens(tokens);
         }
     })
 }

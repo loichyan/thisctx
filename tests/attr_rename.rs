@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[derive(Debug, thisctx::WithContext)]
 #[allow(clippy::enum_variant_names)]
 enum Error {

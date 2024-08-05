@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use thisctx::WithContext;
 
 #[derive(Debug, Eq, PartialEq, WithContext)]

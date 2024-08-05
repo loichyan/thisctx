@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[derive(thisctx::WithContext)]
 #[thisctx(module = "context")]
 pub(crate) enum Error {

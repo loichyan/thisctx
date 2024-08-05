@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::marker::PhantomData;
 
 use thisctx::WithContext;
@@ -57,6 +59,10 @@ struct GenericOrder<T1, T2>(T2, T1);
 #[derive(WithContext)]
 #[thisctx(suffix = "Context")]
 struct GenericDefault<T1, T2>(T1, String, T2);
+
+#[derive(WithContext)]
+#[thisctx(suffix = "Context")]
+struct GenericWithDefault<T1, T2 = usize>(T1, String, T2);
 
 #[test]
 fn generic_order() {

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[derive(thisctx::WithContext)]
 #[thisctx(magic = false)]
 enum Error {
