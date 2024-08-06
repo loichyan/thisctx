@@ -29,4 +29,15 @@ struct Struct {
     path2: Option<usize>,
 }
 
+#[derive(thisctx::WithContext)]
+#[thisctx(suffix = "Context")]
+struct MultipleOptionalFields {
+    #[thisctx(from)]
+    source: String,
+    #[thisctx(optional)]
+    path: Option<String>,
+    #[thisctx(optional)]
+    path2: Option<usize>,
+}
+
 fn main() {}

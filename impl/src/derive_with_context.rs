@@ -79,19 +79,32 @@ pub(crate) fn expand(input: DeriveInput) -> syn::Result<TokenStream> {
 
     // impl WithOptional<#ty> for #input
     //                   ^^^ type is identified by #[thisctx(optional = <id>)]
+    //                       and inferred from the first occurrence
     for fields in optional_fields.values() {
         let ty = &fields[0].field.ty;
-        let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+        // NOTE: `impl WithOptional<<#ty as Optional>::Inner>` results in
+        // conflicting implementations: https://github.com/rust-lang/rust/issues/85576
+        let inner_ty = crate::infer::get_optional_inner(ty);
+        let target = QuoteWith(|tokens| {
+            if let Some(ty) = inner_ty {
+                ty.to_tokens(tokens);
+            } else {
+                tokens.extend(quote!(<#ty as #RT::Optional>::Inner));
+            }
+        });
 
         let input_name = &input.ident;
         let impl_body = to_with_optional_body(&input, fields);
+        let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
         output.extend(quote!(
-            impl #impl_generics #RT::WithOptional<<#ty as #RT::Optional>::Inner>
+            impl #impl_generics #RT::WithOptional<#target>
             for #input_name #ty_generics #where_clause {
                 #[allow(irrefutable_let_patterns)]
                 fn with_optional(
                     &mut self,
+                    // Here we use the full qualified inner type to ensure that
+                    // our inferred type is correct.
                     __value: <#ty as #RT::Optional>::Inner,
                 ) -> #RT::Option<<#ty as #RT::Optional>::Inner> {
                     #impl_body

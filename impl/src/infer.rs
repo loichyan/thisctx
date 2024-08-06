@@ -1,5 +1,5 @@
 use proc_macro2::Ident;
-use syn::Type;
+use syn::{GenericArgument, PathArguments, Type};
 
 macro_rules! matches_any {
     ($ident:expr $(,$value:expr)* $(,)?) => {{
@@ -8,8 +8,24 @@ macro_rules! matches_any {
     }};
 }
 
+/// Returns the first generic argument of an optional type.
+pub(crate) fn get_optional_inner(ty: &Type) -> Option<&Type> {
+    let (_, args) = infer_std(ty)?;
+    if let PathArguments::AngleBracketed(args) = &args {
+        args.args.first().and_then(|args| {
+            if let GenericArgument::Type(inner) = args {
+                Some(inner)
+            } else {
+                None
+            }
+        })
+    } else {
+        None
+    }
+}
+
 pub(crate) fn is_in_magic_whitelist(ty: &Type) -> bool {
-    if let Some(name) = infer_std(ty) {
+    if let Some((name, _)) = infer_std(ty) {
         matches_any!(name, "String", "PathBuf", "Vec", "Box", "Arc", "OsString", "CString", "Rc")
     } else {
         false
@@ -17,7 +33,7 @@ pub(crate) fn is_in_magic_whitelist(ty: &Type) -> bool {
 }
 
 /// Infers a potential `std` type.
-fn infer_std(ty: &Type) -> Option<&Ident> {
+fn infer_std(ty: &Type) -> Option<(&Ident, &PathArguments)> {
     let ty = if let Type::Path(p) = ty {
         p
     } else {
@@ -32,38 +48,55 @@ fn infer_std(ty: &Type) -> Option<&Ident> {
         // a single identifier
         1 if ty.path.leading_colon.is_none() => &segments[0],
         // or a full qualified type
-        2.. if matches_any!(&segments[0].ident, "std", "alloc", "core") => segments.last().unwrap(),
+        2.. if matches_any!(&segments[0].ident, "std", "core", "alloc") => segments.last().unwrap(),
         _ => return None,
     };
-
-    Some(&segment.ident)
+    Some((&segment.ident, &segment.arguments))
 }
 
 #[cfg(test)]
 mod tests {
     use syn::Type;
 
-    fn test_infer_std(input: &str, expected: &str) {
-        println!("infer: {}", input);
+    fn test_input_with(input: &str, f: impl FnOnce(&Type)) {
+        println!("test: {}", input);
         let ty: Type = syn::parse_str(input).unwrap();
-        let name = super::infer_std(&ty).unwrap_or_else(|| panic!("expected {}", expected));
-        if name != expected {
-            panic!("{} != {}", name, expected);
-        }
+        f(&ty);
+    }
+
+    fn test_infer_std(input: &str, expected: &str) {
+        test_input_with(input, |ty| {
+            let (name, _) = super::infer_std(ty).expect("failed to infer name");
+            if name != expected {
+                panic!("{} != {}", name, expected);
+            }
+        });
     }
 
     fn test_in_magic_whitelist(input: &str) {
-        let ty: Type = syn::parse_str(input).unwrap();
-        if !super::is_in_magic_whitelist(&ty) {
-            panic!("{} is not in the magic whitelist", input);
-        }
+        test_input_with(input, |ty| {
+            if !super::is_in_magic_whitelist(ty) {
+                panic!("{} is not in the magic whitelist", input);
+            }
+        });
     }
 
     fn test_not_in_magic_whitelist(input: &str) {
-        let ty: Type = syn::parse_str(input).unwrap();
-        if super::is_in_magic_whitelist(&ty) {
-            panic!("{} is in the magic whitelist", input);
-        }
+        test_input_with(input, |ty| {
+            if super::is_in_magic_whitelist(ty) {
+                panic!("{} is in the magic whitelist", input);
+            }
+        });
+    }
+
+    fn test_optional_inner_type(input: &str, expected: &str) {
+        test_input_with(input, |ty| {
+            let inner = super::get_optional_inner(ty).expect("failed to infer inner type");
+            let (inner_name, _) = super::infer_std(inner).expect("failed to infer inner name");
+            if inner_name != expected {
+                panic!("{} != {}", inner_name, expected);
+            }
+        });
     }
 
     #[test]
@@ -87,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "expected String"]
+    #[should_panic = "failed to infer name"]
     fn infer_std_with_leading_colon() {
         test_infer_std("::String", "String");
     }
@@ -125,5 +158,13 @@ mod tests {
     fn not_in_magic_whitelist() {
         test_not_in_magic_whitelist("::String");
         test_not_in_magic_whitelist("some::magical::path::Arc");
+    }
+
+    #[test]
+    fn infer_optional_inner() {
+        test_optional_inner_type("Option<String>", "String");
+        test_optional_inner_type("Option::<i32>", "i32");
+        test_optional_inner_type("MyOptional<Inner, T>", "Inner");
+        test_optional_inner_type("Vec::<T, Allocator>", "T");
     }
 }
