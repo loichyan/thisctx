@@ -6,7 +6,8 @@ pub enum Error {
     DebugDerived(String),
     #[thisctx(attr = "cfg(all())")]
     DebugNotDerived(String),
-    #[thisctx(transparent, attr = "derive(Clone, Copy)")]
+    #[thisctx(attr = "derive(Clone, Copy)")]
+    #[error(transparent)]
     CopyDerived(String),
 }
 

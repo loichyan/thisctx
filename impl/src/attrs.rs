@@ -1,45 +1,50 @@
 use plap::group;
 use proc_macro2::TokenStream;
-use syn::parse::ParseStream;
+use syn::parse::{Nothing, ParseStream};
 use syn::{Ident, LitBool, Type, Visibility};
 
 pub(crate) fn parse_container(input: &syn::DeriveInput) -> syn::Result<Attrs> {
-    let (mut c, args) = parse_args(&input.attrs)?;
-    c.blocked_all(group![&args.from, &args.optional, &args.source]);
+    let (mut c, thisctx, thiserror) = parse_args(&input.attrs)?;
+    c.blocked_all(group![&thisctx.from, &thisctx.optional, &thiserror.source]);
     if matches!(input.data, syn::Data::Enum(_)) {
-        c.blocked_all(group![&args.rename, &args.transparent]);
+        c.blocked_all(group![&thisctx.rename, &thiserror.transparent]);
     } else {
-        c.blocked(&args.skip);
+        c.blocked(&thisctx.skip);
     }
-    build_attrs(&mut c, args)
+    build_attrs(&mut c, thisctx, thiserror)
 }
 
 pub(crate) fn parse_variant(input: &syn::Variant) -> syn::Result<Attrs> {
-    let (mut c, args) = parse_args(&input.attrs)?;
+    let (mut c, thisctx, thiserror) = parse_args(&input.attrs)?;
     c.blocked_all(group![
-        &args.from,
-        &args.module,
-        &args.optional,
-        &args.source,
+        &thisctx.from,
+        &thisctx.module,
+        &thisctx.optional,
+        &thiserror.source,
     ]);
-    build_attrs(&mut c, args)
+    build_attrs(&mut c, thisctx, thiserror)
 }
 
 pub(crate) fn parse_field(input: &syn::Field) -> syn::Result<Attrs> {
-    let (mut c, args) = parse_args(&input.attrs)?;
+    let (mut c, thisctx, thiserror) = parse_args(&input.attrs)?;
     c.blocked_all(group![
-        &args.module,
-        &args.prefix,
-        &args.remote,
-        &args.skip,
-        &args.suffix,
-        &args.transparent,
+        &thisctx.module,
+        &thisctx.prefix,
+        &thisctx.remote,
+        &thisctx.skip,
+        &thisctx.suffix,
         // field visibility are the same as its parent
-        &args.vis,
-        &args.visibility,
+        &thisctx.vis,
+        &thisctx.visibility,
+        &thiserror.transparent,
     ]);
     if input.ident.is_none() {
-        for (key, value) in args.optional.keys().iter().zip(args.optional.values()) {
+        for (key, value) in thisctx
+            .optional
+            .keys()
+            .iter()
+            .zip(thisctx.optional.values())
+        {
             if value.0.is_none() {
                 c.with_error_at(
                     key.span(),
@@ -48,47 +53,62 @@ pub(crate) fn parse_field(input: &syn::Field) -> syn::Result<Attrs> {
             }
         }
     }
-    build_attrs(&mut c, args)
+    build_attrs(&mut c, thisctx, thiserror)
 }
 
-fn parse_args(attrs: &[syn::Attribute]) -> syn::Result<(plap::Checker, ThisctxArgs)> {
+fn parse_args(
+    attrs: &[syn::Attribute],
+) -> syn::Result<(plap::Checker, ThisctxArgs, ThiserrorArgs)> {
     let mut c = plap::Checker::default();
-    let mut args = <ThisctxArgs as plap::Args>::init();
+    let mut thisctx = <ThisctxArgs as plap::Args>::init();
+    let mut thiserror = ThiserrorArgs {
+        transparent: plap::Arg::new("transparent"),
+        source: plap::Arg::new("source"),
+    };
     for (name, attr) in attrs
         .iter()
         .flat_map(|a| a.path().get_ident().map(|i| (i, a)))
     {
         if name == "thisctx" {
             let r = attr.parse_args_with(|input: ParseStream| {
-                plap::Parser::new(input).parse_all(&mut args)
+                plap::Parser::new(input).parse_all(&mut thisctx)
             });
             c.with_source(name.span());
             c.with_result(r);
         } else if name == "error" {
-            let t = attr.parse_args_with(|input: ParseStream| {
+            attr.parse_args_with(|input: ParseStream| {
                 syn::custom_keyword!(transparent);
                 if input.peek(transparent) {
-                    input.parse::<Ident>().map(Some)
+                    let k = input.parse::<Ident>()?;
+                    thiserror.transparent.add(k, Nothing);
                 } else {
                     // ignore other values
                     while input.parse::<Option<proc_macro2::TokenTree>>()?.is_some() {}
-                    Ok(None)
                 }
+                Ok(())
             })?;
-            if let Some(k) = t {
-                let val = LitBool::new(true, k.span());
-                args.transparent.add(k, val);
-            }
         } else if name == "source" {
-            let val = LitBool::new(true, name.span());
-            args.source.add(name.clone(), val);
+            thiserror.source.add(name.clone(), Nothing);
         }
     }
-    Ok((c, args))
+
+    // checks between thisctx and thiserror attributes
+    c.conflicts_with(&thisctx.attr, &thiserror.source);
+    c.conflicts_with(&thisctx.attribute, &thiserror.source);
+    c.conflicts_with_each(
+        &thisctx.magic,
+        group![&thiserror.source, &thiserror.transparent],
+    );
+
+    Ok((c, thisctx, thiserror))
 }
 
-fn build_attrs(c: &mut plap::Checker, args: ThisctxArgs) -> syn::Result<Attrs> {
-    plap::Args::check(&args, c);
+fn build_attrs(
+    c: &mut plap::Checker,
+    thisctx: ThisctxArgs,
+    thiserror: ThiserrorArgs,
+) -> syn::Result<Attrs> {
+    plap::Args::check(&thisctx, c);
     c.finish()?;
     let ThisctxArgs {
         attr,
@@ -101,12 +121,14 @@ fn build_attrs(c: &mut plap::Checker, args: ThisctxArgs) -> syn::Result<Attrs> {
         remote,
         rename,
         skip,
-        source,
         suffix,
-        transparent,
         vis,
         visibility,
-    } = args;
+    } = thisctx;
+    let ThiserrorArgs {
+        transparent,
+        source,
+    } = thiserror;
     Ok(Attrs {
         attr: attr
             .take_any()
@@ -121,9 +143,9 @@ fn build_attrs(c: &mut plap::Checker, args: ThisctxArgs) -> syn::Result<Attrs> {
         remote: remote.take_last(),
         rename: rename.take_last(),
         skip: skip.take_last().map(|t| t.value()),
-        source: source.take_flag(),
+        source: !source.is_empty(),
         suffix: suffix.take_last(),
-        transparent: transparent.take_flag(),
+        transparent: !transparent.is_empty(),
         vis: vis.take_last().or_else(|| visibility.take_last()),
     })
 }
@@ -159,23 +181,28 @@ pub(crate) struct Attrs {
     pub vis: Option<Visibility>,
 }
 
+pub(crate) struct ThiserrorArgs {
+    pub transparent: plap::Arg<Nothing>,
+    pub source: plap::Arg<Nothing>,
+}
+
 plap::define_args!(
     #[check(exclusive_aliases = [vis, visibility])]
     struct ThisctxArgs {
         #[arg(is_token_tree)]
-        #[check(conflicts_with_any = [from, optional, source])]
+        #[check(conflicts_with_each = [from, optional])]
         attr: plap::Arg<TokenStream>,
 
         #[arg(is_token_tree)]
-        #[check(conflicts_with_any = [from, optional, source])]
+        #[check(conflicts_with_each = [from, optional])]
         attribute: plap::Arg<TokenStream>,
 
         #[arg(is_flag)]
-        #[check(exclusive, conflicts_with_any = [magic, optional])]
+        #[check(exclusive, conflicts_with = optional)]
         from: plap::Arg<LitBool>,
 
         #[arg(is_flag)]
-        #[check(exclusive, conflicts_with_any = [optional, source, transparent])]
+        #[check(exclusive, conflicts_with_each = [from ,optional])]
         magic: plap::Arg<LitBool>,
 
         // TODO: link docs to argument keys
@@ -198,24 +225,16 @@ plap::define_args!(
         remote: plap::Arg<Type>,
 
         #[arg(is_token_tree)]
-        #[check(exclusive, conflicts_with_any = [prefix, suffix])]
+        #[check(exclusive, conflicts_with_each = [prefix, suffix])]
         rename: plap::Arg<Ident>,
 
         #[arg(is_flag)]
         #[check(exclusive)]
         skip: plap::Arg<LitBool>,
 
-        #[arg(is_flag)]
-        #[check(exclusive)]
-        source: plap::Arg<LitBool>,
-
         #[arg(is_token_tree)]
         #[check(exclusive)]
         suffix: plap::Arg<Ident>,
-
-        #[arg(is_flag)]
-        #[check(exclusive)]
-        transparent: plap::Arg<LitBool>,
 
         #[arg(is_token_tree)]
         vis: plap::Arg<Visibility>,

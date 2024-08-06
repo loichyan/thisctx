@@ -19,5 +19,5 @@ syn = "2.0"
 
 [dependencies.plap]
 git = "https://github.com/loichyan/plap.git"
-rev = "172f385ed849b64c1ba674d3bcc6111714c2da62"
+rev = "8172dc0b9629cf299c7290e1c7e6ec6bfebbc4ea"
 features = ["checking"]

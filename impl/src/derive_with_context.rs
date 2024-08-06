@@ -368,28 +368,28 @@ impl<'i> ContextInfo<'i, '_> {
             });
         }
         if attrs.transparent {
-            // A transparent error should have only 1 field, and that field
-            // becomes the source field.
             if len != 1 {
                 return Err(syn::Error::new(
                     self.span(),
                     "a transparent context must have exactly 1 field",
                 ));
             }
+            // A transparent error should have only 1 field, and that field
+            // becomes the source.
             source_field = Some(0);
             field_infos[0].attrs.source = true;
         } else if let Some(i) = from_field {
-            // From attributes always implies that the same field is source.
             if (len - optionals_count) != 1 {
                 return Err(syn::Error::new(
                     self.span(),
                     "`from` requires exactly 1 field (excluding optional fields)",
                 ));
             }
+            // From attributes always implies that the same field is source.
             source_field = from_field;
             field_infos[i].attrs.source = true;
         } else if let (None, Some(i)) = (source_field, field_named_source) {
-            // Source attribute takes precedence over the field name "source".
+            // Attributes take precedence over the field named "source".
             source_field = field_named_source;
             field_infos[i].attrs.source = true;
         }
