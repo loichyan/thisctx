@@ -1,0 +1,11 @@
+error: `optional` ID conflicts: path
+  --> tests/compile_fail/attr_optional.rs:14:5
+   |
+14 |     WithConflict(
+   |     ^^^^^^^^^^^^
+
+error: `optional` ID conflicts: path
+  --> tests/compile_fail/attr_optional.rs:23:8
+   |
+23 | struct Struct {
+   |        ^^^^^^

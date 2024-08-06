@@ -2,7 +2,7 @@
 
 #[derive(thisctx::WithContext)]
 #[thisctx(attr = "derive(Debug)")]
-pub enum Error {
+enum Error {
     DebugDerived(String),
     #[thisctx(attr = "cfg(all())")]
     DebugNotDerived(String),

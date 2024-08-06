@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 #[derive(thisctx::WithContext)]
-pub enum Error {
+enum Error {
     Optional(#[thisctx(optional = "path")] Option<String>),
     WithSource(
         #[source] String,
@@ -11,13 +11,22 @@ pub enum Error {
         #[thisctx(from)] String,
         #[thisctx(optional = "path")] Option<String>,
     ),
+    WithConflict(
+        #[thisctx(from)] String,
+        #[thisctx(optional = "path")] Option<String>,
+        #[thisctx(optional = "path")] Option<usize>,
+    ),
 }
 
 #[derive(thisctx::WithContext)]
 #[thisctx(suffix = "Context")]
-pub struct Struct {
+struct Struct {
     #[thisctx(from)]
     source: String,
     #[thisctx(optional)]
     path: Option<String>,
+    #[thisctx(optional = "path")]
+    path2: Option<usize>,
 }
+
+fn main() {}

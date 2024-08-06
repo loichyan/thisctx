@@ -48,7 +48,7 @@ pub(crate) fn parse_field(input: &syn::Field) -> syn::Result<Attrs> {
             if value.0.is_none() {
                 c.with_error_at(
                     key.span(),
-                    format!("`{}` requires a value on tuple fields", key),
+                    format!("`{}` requires an ID on tuple fields", key),
                 );
             }
         }

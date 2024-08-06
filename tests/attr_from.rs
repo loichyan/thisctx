@@ -3,7 +3,7 @@
 struct Remote;
 
 #[derive(thisctx::WithContext)]
-pub(crate) enum Error {
+enum Error {
     #[thisctx(remote = "Remote")]
     Variant1(#[thisctx(from)] String),
     Variant2(#[thisctx(from)] i32),

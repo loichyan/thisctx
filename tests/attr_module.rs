@@ -2,7 +2,7 @@
 
 #[derive(thisctx::WithContext)]
 #[thisctx(module = "context")]
-pub(crate) enum Error {
+pub enum Error {
     Variant1(String),
     Variant2(i32),
 }

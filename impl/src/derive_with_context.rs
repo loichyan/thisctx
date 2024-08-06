@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{btree_map, BTreeMap};
 use std::ops;
 
 use proc_macro2::{Delimiter, Group, Ident, Span, TokenStream};
@@ -156,10 +156,7 @@ impl<'i> ContextInfo<'i, '_> {
             .or_else(|| parent_attrs.and_then(|a| a.rename(orig_name)))
             .unwrap_or_else(|| orig_name.clone());
         if parent_attrs.map_or(true, |a| a.module.is_none()) && name == input.ident {
-            return Err(syn::Error::new(
-                self.span(),
-                format!("name conflicts with `{}`", input.ident),
-            ));
+            return Err(self.error(format!("name conflicts: `{}`", input.ident)));
         }
 
         // IntoError::Target
@@ -324,7 +321,7 @@ impl<'i> ContextInfo<'i, '_> {
             // check source field
             if f_attrs.source {
                 if source_field.is_some() {
-                    return Err(syn::Error::new(self.span(), "duplicate source fields"));
+                    return Err(self.error("duplicate source fields"));
                 }
                 source_field = Some(i);
             }
@@ -335,7 +332,7 @@ impl<'i> ContextInfo<'i, '_> {
             // check from field
             if f_attrs.from {
                 if from_field.is_some() {
-                    return Err(syn::Error::new(self.span(), "duplicate from fields"));
+                    return Err(self.error("duplicate from fields"));
                 }
                 from_field = Some(i);
             }
@@ -349,15 +346,25 @@ impl<'i> ContextInfo<'i, '_> {
                     // this should have been checked during parsing
                     .unwrap_or_else(|| unreachable!())
                     .clone();
-                global
-                    .optional_fields
-                    .entry(id)
-                    .or_default()
-                    .push(OptionalField {
-                        parent: self.name,
-                        field,
-                        index: i,
-                    });
+
+                let fields = match global.optional_fields.entry(id) {
+                    btree_map::Entry::Vacant(v) => v.insert(<_>::default()),
+                    btree_map::Entry::Occupied(o) => {
+                        if o.get()
+                            .last()
+                            .map_or(false, |f| std::ptr::eq(f.parent, self.name))
+                        {
+                            return Err(self.error(format!("`optional` ID conflicts: {}", o.key())));
+                        }
+                        o.into_mut()
+                    }
+                };
+
+                fields.push(OptionalField {
+                    parent: self.name,
+                    field,
+                    index: i,
+                });
             }
 
             field_infos.push(FieldInfo {
@@ -369,10 +376,7 @@ impl<'i> ContextInfo<'i, '_> {
         }
         if attrs.transparent {
             if len != 1 {
-                return Err(syn::Error::new(
-                    self.span(),
-                    "a transparent context must have exactly 1 field",
-                ));
+                return Err(self.error("a transparent context must have exactly 1 field"));
             }
             // A transparent error should have only 1 field, and that field
             // becomes the source.
@@ -380,10 +384,9 @@ impl<'i> ContextInfo<'i, '_> {
             field_infos[0].attrs.source = true;
         } else if let Some(i) = from_field {
             if (len - optionals_count) != 1 {
-                return Err(syn::Error::new(
-                    self.span(),
-                    "`from` requires exactly 1 field (excluding optional fields)",
-                ));
+                return Err(
+                    self.error("`from` requires exactly 1 field (excluding optional fields)")
+                );
             }
             // From attributes always implies that the same field is source.
             source_field = from_field;
@@ -425,8 +428,8 @@ impl<'i> ContextInfo<'i, '_> {
         })
     }
 
-    fn span(&self) -> Span {
-        self.name.span()
+    fn error(&self, msg: impl std::fmt::Display) -> syn::Error {
+        syn::Error::new(self.name.span(), msg)
     }
 }
 
