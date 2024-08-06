@@ -478,7 +478,7 @@ fn to_with_optional_body<'a>(
     //     ..
     // } = my_tuple;
     let variant_prefix = to_variant_prefix(input);
-    QuoteWith(move |tokens| {
+    let match_arms = QuoteWith(move |tokens| {
         for OptionalField {
             parent,
             field,
@@ -487,16 +487,18 @@ fn to_with_optional_body<'a>(
         {
             let member = to_member(field, *index);
             tokens.extend(quote!(
-                if let #variant_prefix #parent {
-                    #member: __self,
-                    ..
-                } = self {
-                    return #RT::Optional::set(__self, __value);
-                }
+                #variant_prefix #parent { #member: __self, .. }
+                    => return #RT::Optional::set(__self, __value),
             ));
         }
-        tokens.extend(quote!(return #RT::Option::Some(__value)));
-    })
+    });
+    quote!(
+        match self {
+            #match_arms
+            #[allow(unreachable_patterns)]
+            _ => return #RT::Option::Some(__value),
+        }
+    )
 }
 
 struct FieldsInfo<'a> {
